@@ -2,16 +2,21 @@ import 'package:flutter/material.dart';
 import '../../app/theme.dart';
 import '../../models/app_preferences.dart';
 import '../../models/focus_mode.dart';
+import '../../models/workout_session.dart';
 import '../../services/local_storage_service.dart';
+import '../../services/workout_session_service.dart';
 import '../settings/settings_screen.dart';
+import '../workout/workout_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final LocalStorageService storageService;
+  final WorkoutSessionService sessionService;
   final AppPreferences initialPreferences;
 
   const HomeScreen({
     super.key,
     required this.storageService,
+    required this.sessionService,
     required this.initialPreferences,
   });
 
@@ -23,6 +28,7 @@ class _HomeScreenState extends State<HomeScreen> {
   late AppPreferences _preferences;
   late int _selectedRestDuration;
   late FocusMode _selectedFocusMode;
+  WorkoutSession? _unresolvedSession;
 
   final List<int> _quickRestOptions = const [30, 60, 90, 120];
 
@@ -32,6 +38,14 @@ class _HomeScreenState extends State<HomeScreen> {
     _preferences = widget.initialPreferences;
     _selectedRestDuration = _preferences.defaultRestDurationSeconds;
     _selectedFocusMode = _preferences.focusMode;
+    _checkForActiveSession();
+  }
+
+  void _checkForActiveSession() {
+    final active = widget.sessionService.loadActiveSession();
+    if (active != null) {
+      _unresolvedSession = active;
+    }
   }
 
   void _onRestDurationSelected(int seconds) {
@@ -140,23 +154,40 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _onStartWorkoutTapped() {
-    // In Phase 1, verify UI selection readiness and notify user about Phase 2 engine
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Workout configured: ${_selectedRestDuration}s rest • ${_selectedFocusMode.label} mode. Ready for Phase 2 Workout Engine!',
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
-        backgroundColor: AppTheme.surfaceElevated,
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 3),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-          side: const BorderSide(color: AppTheme.primaryBlue),
+  void _startWorkout({WorkoutSession? existingSession}) {
+    final session = existingSession ??
+        WorkoutSession.start(
+          selectedRestDuration: _selectedRestDuration,
+        );
+
+    widget.sessionService.saveActiveSession(session);
+
+    setState(() {
+      _unresolvedSession = null;
+    });
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (ctx) => WorkoutScreen(
+          initialSession: session,
+          sessionService: widget.sessionService,
         ),
       ),
-    );
+    ).then((_) {
+      // Recheck storage on return to home
+      if (mounted) {
+        setState(() {
+          _checkForActiveSession();
+        });
+      }
+    });
+  }
+
+  void _discardUnfinishedSession() {
+    widget.sessionService.clearActiveSession();
+    setState(() {
+      _unresolvedSession = null;
+    });
   }
 
   @override
@@ -227,7 +258,63 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 28),
+              const SizedBox(height: 24),
+
+              // Active Workout Recovery Banner (if app was reopened during an unfinished workout)
+              if (_unresolvedSession != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surfaceElevated,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppTheme.primaryBlue, width: 1.5),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.history_toggle_off, color: AppTheme.accentBlue, size: 24),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'UNFINISHED WORKOUT',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.8,
+                                color: AppTheme.primaryText,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${_unresolvedSession!.setsCompleted} sets • ${_unresolvedSession!.currentState.label}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: AppTheme.secondaryText,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _discardUnfinishedSession,
+                        child: const Text('DISCARD', style: TextStyle(color: AppTheme.secondaryText, fontSize: 11)),
+                      ),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primaryBlue,
+                          minimumSize: const Size(80, 36),
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                        ),
+                        onPressed: () => _startWorkout(existingSession: _unresolvedSession),
+                        child: const Text('RESUME', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
 
               Expanded(
                 child: SingleChildScrollView(
@@ -334,9 +421,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
 
-              // Section 3: Large Primary CTA — START WORKOUT
+              // Section 3: Large Dominant Primary CTA — START WORKOUT
               ElevatedButton(
-                onPressed: _onStartWorkoutTapped,
+                onPressed: () => _startWorkout(),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.primaryBlue,
                   foregroundColor: Colors.white,
