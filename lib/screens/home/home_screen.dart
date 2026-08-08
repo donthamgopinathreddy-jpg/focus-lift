@@ -5,18 +5,21 @@ import '../../models/focus_mode.dart';
 import '../../models/workout_session.dart';
 import '../../services/local_storage_service.dart';
 import '../../services/workout_session_service.dart';
+import '../../services/notification_service.dart';
 import '../settings/settings_screen.dart';
 import '../workout/workout_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final LocalStorageService storageService;
   final WorkoutSessionService sessionService;
+  final NotificationService notificationService;
   final AppPreferences initialPreferences;
 
   const HomeScreen({
     super.key,
     required this.storageService,
     required this.sessionService,
+    required this.notificationService,
     required this.initialPreferences,
   });
 
@@ -171,6 +174,8 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (ctx) => WorkoutScreen(
           initialSession: session,
           sessionService: widget.sessionService,
+          notificationService: widget.notificationService,
+          preferences: _preferences,
         ),
       ),
     ).then((_) {

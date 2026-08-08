@@ -1,19 +1,27 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../app/theme.dart';
+import '../../models/app_preferences.dart';
 import '../../models/workout_session.dart';
 import '../../models/workout_state.dart';
+import '../../services/alert_service.dart';
+import '../../services/notification_service.dart';
+import '../../services/wakelock_service.dart';
 import '../../services/workout_session_service.dart';
 import '../summary/workout_summary_screen.dart';
 
 class WorkoutScreen extends StatefulWidget {
   final WorkoutSession initialSession;
   final WorkoutSessionService sessionService;
+  final NotificationService notificationService;
+  final AppPreferences preferences;
 
   const WorkoutScreen({
     super.key,
     required this.initialSession,
     required this.sessionService,
+    required this.notificationService,
+    required this.preferences,
   });
 
   @override
@@ -22,19 +30,35 @@ class WorkoutScreen extends StatefulWidget {
 
 class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserver {
   late WorkoutSession _session;
+  late AppPreferences _preferences;
   Timer? _ticker;
   DateTime _currentTime = DateTime.now();
+  bool _alertTriggered = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _session = widget.initialSession;
-    _sessionService.saveActiveSession(_session);
+    _preferences = widget.preferences;
+    widget.sessionService.saveActiveSession(_session);
+
+    // Contextually request notification permissions for background rest alerts
+    widget.notificationService.requestPermission();
+
+    // Enable wakelock if Keep Screen Awake is preferred
+    WakelockService.setAwake(_preferences.keepScreenAwake);
+
+    // Schedule notification if starting in resting state
+    if (_session.currentState == WorkoutState.resting && _session.restEndsAt != null) {
+      widget.notificationService.scheduleRestNotification(
+        restEndsAt: _session.restEndsAt!,
+        nextSetNumber: _session.setsCompleted + 1,
+      );
+    }
+
     _startTicker();
   }
-
-  WorkoutSessionService get _sessionService => widget.sessionService;
 
   void _startTicker() {
     _ticker?.cancel();
@@ -45,7 +69,17 @@ class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserv
         _currentTime = now;
         if (_session.currentState == WorkoutState.resting && _session.isRestExpired(now)) {
           _session = _session.copyWith(currentState: WorkoutState.restComplete);
-          _sessionService.saveActiveSession(_session);
+          widget.sessionService.saveActiveSession(_session);
+
+          // Fire sound and haptic alert once when countdown reaches zero
+          if (!_alertTriggered) {
+            _alertTriggered = true;
+            AlertService.triggerRestCompleteAlert(
+              soundEnabled: _preferences.soundEnabled,
+              vibrationEnabled: _preferences.vibrationEnabled,
+            );
+            widget.notificationService.cancelRestNotification();
+          }
         }
       });
     });
@@ -58,9 +92,20 @@ class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserv
       final now = DateTime.now();
       setState(() {
         _currentTime = now;
-        _session = _session.evaluatedAt(now);
+        final evaluated = _session.evaluatedAt(now);
+        if (_session.currentState == WorkoutState.resting &&
+            evaluated.currentState == WorkoutState.restComplete &&
+            !_alertTriggered) {
+          _alertTriggered = true;
+          AlertService.triggerRestCompleteAlert(
+            soundEnabled: _preferences.soundEnabled,
+            vibrationEnabled: _preferences.vibrationEnabled,
+          );
+        }
+        _session = evaluated;
       });
-      _sessionService.saveActiveSession(_session);
+      widget.sessionService.saveActiveSession(_session);
+      widget.notificationService.cancelRestNotification();
     }
   }
 
@@ -68,34 +113,55 @@ class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserv
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _ticker?.cancel();
+    widget.notificationService.cancelRestNotification();
+    WakelockService.release();
     super.dispose();
   }
 
   void _onEndSet() {
     final now = DateTime.now();
+    _alertTriggered = false;
+
     setState(() {
       _currentTime = now;
       _session = _session.endSet(timestamp: now);
     });
-    _sessionService.saveActiveSession(_session);
+
+    widget.sessionService.saveActiveSession(_session);
+
+    // Schedule background rest complete alert
+    if (_session.restEndsAt != null) {
+      widget.notificationService.scheduleRestNotification(
+        restEndsAt: _session.restEndsAt!,
+        nextSetNumber: _session.setsCompleted + 1,
+      );
+    }
   }
 
   void _onSkipRest() {
     final now = DateTime.now();
+    _alertTriggered = false;
+    widget.notificationService.cancelRestNotification();
+
     setState(() {
       _currentTime = now;
       _session = _session.skipRest();
     });
-    _sessionService.saveActiveSession(_session);
+
+    widget.sessionService.saveActiveSession(_session);
   }
 
   void _onStartNextSet() {
     final now = DateTime.now();
+    _alertTriggered = false;
+    widget.notificationService.cancelRestNotification();
+
     setState(() {
       _currentTime = now;
       _session = _session.startNextSet();
     });
-    _sessionService.saveActiveSession(_session);
+
+    widget.sessionService.saveActiveSession(_session);
   }
 
   void _confirmFinishWorkout() {
@@ -133,8 +199,11 @@ class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserv
 
   void _finalizeWorkout() {
     _ticker?.cancel();
+    widget.notificationService.cancelRestNotification();
+    WakelockService.release();
+
     final finishedSession = _session.finishWorkout();
-    _sessionService.clearActiveSession();
+    widget.sessionService.clearActiveSession();
 
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
