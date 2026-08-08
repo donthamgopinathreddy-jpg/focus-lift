@@ -9,6 +9,8 @@ import android.os.Build
 import android.os.Process
 import android.provider.MediaStore
 import android.provider.Settings
+import android.view.WindowManager
+import androidx.core.app.NotificationManagerCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -31,6 +33,44 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                     "requestAuthorization" -> {
+                        try {
+                            val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                            }
+                            startActivity(intent)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.success(false)
+                        }
+                    }
+                    "areNotificationsEnabled" -> {
+                        try {
+                            val enabled = NotificationManagerCompat.from(this).areNotificationsEnabled()
+                            result.success(enabled)
+                        } catch (e: Exception) {
+                            result.success(true)
+                        }
+                    }
+                    "openNotificationSettings" -> {
+                        try {
+                            val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                    putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                }
+                            } else {
+                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = Uri.fromParts("package", packageName, null)
+                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                }
+                            }
+                            startActivity(intent)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.success(false)
+                        }
+                    }
+                    "openUsageAccessSettings" -> {
                         try {
                             val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
                                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -107,12 +147,15 @@ class MainActivity : FlutterActivity() {
                         result.success(null)
                     }
                     "startFocusSession" -> {
+                        enableScreenLockFlags()
                         result.success(true)
                     }
                     "stopFocusSession" -> {
+                        disableScreenLockFlags()
                         result.success(null)
                     }
                     "restoreNormalAccess" -> {
+                        disableScreenLockFlags()
                         result.success(null)
                     }
                     else -> {
@@ -120,6 +163,36 @@ class MainActivity : FlutterActivity() {
                     }
                 }
             }
+    }
+
+    private fun enableScreenLockFlags() {
+        runOnUiThread {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                setShowWhenLocked(true)
+                setTurnScreenOn(true)
+            } else {
+                @Suppress("DEPRECATION")
+                window.addFlags(
+                    WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                )
+            }
+        }
+    }
+
+    private fun disableScreenLockFlags() {
+        runOnUiThread {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                setShowWhenLocked(false)
+                setTurnScreenOn(false)
+            } else {
+                @Suppress("DEPRECATION")
+                window.clearFlags(
+                    WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                )
+            }
+        }
     }
 
     private fun checkUsageAccessGranted(): Boolean {

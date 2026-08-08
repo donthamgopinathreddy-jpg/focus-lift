@@ -141,6 +141,136 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _onLaunchTapped() {
+    if (_unresolvedSession != null) {
+      _startWorkout(existingSession: _unresolvedSession);
+      return;
+    }
+
+    final setupDone = widget.storageService.isWorkoutSetupCompleted();
+    if (!setupDone) {
+      _showWorkoutModeSetupSheet();
+    } else {
+      _startWorkout();
+    }
+  }
+
+  void _showWorkoutModeSetupSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.surfaceElevated,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        side: BorderSide(color: AppTheme.border),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'SET UP WORKOUT MODE',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.2,
+                    color: AppTheme.primaryText,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Focus Lift needs a few permissions to work properly during your training.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppTheme.secondaryText,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _buildSetupPermissionRow(
+                  icon: Icons.notifications_active_outlined,
+                  title: 'Notifications',
+                  subtitle: 'Rest alerts and return-to-workout shortcut',
+                ),
+                const SizedBox(height: 12),
+                _buildSetupPermissionRow(
+                  icon: Icons.query_stats_outlined,
+                  title: 'Usage Access',
+                  subtitle: 'Helps Focus Lift detect when you leave the workout',
+                ),
+                const SizedBox(height: 12),
+                _buildSetupPermissionRow(
+                  icon: Icons.screen_lock_portrait_outlined,
+                  title: 'Keep Screen Awake',
+                  subtitle: 'Used only while your workout is active',
+                ),
+                const SizedBox(height: 20),
+                ElevatedButton(
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    await widget.notificationService.requestPermission();
+                    await widget.storageService.setWorkoutSetupCompleted(true);
+                    _startWorkout();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primaryBlue,
+                    minimumSize: const Size(double.infinity, 54),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: const Text(
+                    'CONTINUE',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, letterSpacing: 1.2),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSetupPermissionRow({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: AppTheme.accentBlue, size: 20),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: AppTheme.primaryText,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.secondaryText,
+                  height: 1.3,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   void _startWorkout({WorkoutSession? existingSession}) {
     if (_isLaunching) return;
     setState(() {
@@ -347,7 +477,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: InkWell(
                       customBorder: const CircleBorder(),
                       splashColor: AppTheme.accentBlue.withAlpha(100),
-                      onTap: () => _startWorkout(),
+                      onTap: _onLaunchTapped,
                       child: Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,

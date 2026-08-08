@@ -15,6 +15,7 @@ class LocalStorageService {
   static const String _keyMusicPackage = 'fl_music_package';
   static const String _keyMusicAppName = 'fl_music_app_name';
   static const String _keyCustomAllowed = 'fl_custom_allowed_packages';
+  static const String _keySetupCompleted = 'fl_workout_mode_setup_completed';
 
   final SharedPreferences _prefs;
 
@@ -105,5 +106,15 @@ class LocalStorageService {
         _prefs.remove(_keyMusicAppName),
       _prefs.setStringList(_keyCustomAllowed, allowed.customAllowedPackages.toList()),
     ]);
+  }
+
+  /// Checks whether the user has seen the first-time workout mode setup sheet.
+  bool isWorkoutSetupCompleted() {
+    return _prefs.getBool(_keySetupCompleted) ?? false;
+  }
+
+  /// Sets the first-time workout mode setup completion state.
+  Future<void> setWorkoutSetupCompleted(bool completed) async {
+    await _prefs.setBool(_keySetupCompleted, completed);
   }
 }

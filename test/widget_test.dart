@@ -42,6 +42,12 @@ void main() {
           return 'authorized';
         case 'requestAuthorization':
           return true;
+        case 'areNotificationsEnabled':
+          return true;
+        case 'openNotificationSettings':
+          return null;
+        case 'openUsageAccessSettings':
+          return null;
         case 'launchMusicApp':
           launchMusicCalls++;
           return true;
@@ -93,7 +99,7 @@ void main() {
         .setMockMethodCallHandler(mockChannel, null);
   });
 
-  group('Major Redesign: Launch Screen & Circular LAUNCH Button', () {
+  group('Permission & Workout-Mode Upgrade: Launch Screen & Setup Flow', () {
     testWidgets('Home renders large circular LAUNCH button, rest options, and available tools', (tester) async {
       SharedPreferences.setMockInitialValues({});
       final storage = await LocalStorageService.create();
@@ -171,9 +177,52 @@ void main() {
       expect(reloaded.defaultRestDurationSeconds, 90);
     });
 
-    testWidgets('Pressing LAUNCH immediately creates session and navigates to WorkoutScreen', (tester) async {
+    testWidgets('First-time LAUNCH presents setup sheet and CONTINUE activates workout', (tester) async {
       SharedPreferences.setMockInitialValues({});
       final storage = await LocalStorageService.create();
+      final sessionService = await WorkoutSessionService.create();
+      final notificationService = await NotificationService.create();
+      final focusService = await FocusControlService.create();
+      final preferences = storage.loadPreferences();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: HomeScreen(
+            storageService: storage,
+            sessionService: sessionService,
+            notificationService: notificationService,
+            focusService: focusService,
+            initialPreferences: preferences,
+          ),
+        ),
+      );
+
+      // Tap LAUNCH for the first time
+      await tester.tap(find.text('LAUNCH'));
+      await tester.pumpAndSettle();
+
+      // Setup sheet is presented
+      expect(find.text('SET UP WORKOUT MODE'), findsOneWidget);
+      expect(find.text('Notifications'), findsOneWidget);
+      expect(find.text('Usage Access'), findsOneWidget);
+      expect(find.text('Keep Screen Awake'), findsOneWidget);
+
+      // Tap CONTINUE
+      await tester.tap(find.text('CONTINUE'));
+      await tester.pumpAndSettle();
+
+      // Workout screen active immediately
+      expect(find.text('WORKOUT ACTIVE'), findsOneWidget);
+      expect(find.text('END SET'), findsOneWidget);
+      expect(find.text('QUICK ACCESS'), findsOneWidget);
+      expect(sessionService.loadActiveSession(), isNotNull);
+    });
+
+    testWidgets('Subsequent LAUNCH starts workout immediately without setup sheet', (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final storage = await LocalStorageService.create();
+      await storage.setWorkoutSetupCompleted(true);
+
       final sessionService = await WorkoutSessionService.create();
       final notificationService = await NotificationService.create();
       final focusService = await FocusControlService.create();
@@ -195,16 +244,13 @@ void main() {
       await tester.tap(find.text('LAUNCH'));
       await tester.pumpAndSettle();
 
-      // Workout screen active immediately
       expect(find.text('WORKOUT ACTIVE'), findsOneWidget);
-      expect(find.text('END SET'), findsOneWidget);
-      expect(find.text('QUICK ACCESS'), findsOneWidget);
-      expect(sessionService.loadActiveSession(), isNotNull);
+      expect(find.text('SET UP WORKOUT MODE'), findsNothing);
     });
   });
 
-  group('Major Redesign: Dedicated Workout & Rest Experience', () {
-    testWidgets('WorkoutScreen handles END SET, Rest Countdown, Skip Rest, and Next Set', (tester) async {
+  group('Permission & Workout-Mode Upgrade: Dedicated Workout & Rest Experience', () {
+    testWidgets('WorkoutScreen handles END SET, Rest Countdown, Skip Rest, and Quick Access', (tester) async {
       SharedPreferences.setMockInitialValues({});
       final sessionService = await WorkoutSessionService.create();
       final notificationService = await NotificationService.create();
@@ -304,7 +350,7 @@ void main() {
     });
   });
 
-  group('Major Redesign: Active Session Recovery & Startup Routing', () {
+  group('Permission & Workout-Mode Upgrade: Active Session Recovery & Startup Routing', () {
     testWidgets('App startup with active session opens directly into WorkoutScreen', (tester) async {
       SharedPreferences.setMockInitialValues({});
       final storage = await LocalStorageService.create();
@@ -371,8 +417,8 @@ void main() {
     });
   });
 
-  group('Major Redesign: Settings & Allowed Apps Screens', () {
-    testWidgets('Settings screen provides minimal toggles and privacy text', (tester) async {
+  group('Permission & Workout-Mode Upgrade: Settings Screen Permissions Status', () {
+    testWidgets('Settings screen displays live workout mode permission statuses', (tester) async {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
@@ -396,53 +442,17 @@ void main() {
         ),
       );
 
+      await tester.pumpAndSettle();
+
       expect(find.text('SETTINGS'), findsOneWidget);
+      expect(find.text('WORKOUT MODE PERMISSIONS'), findsOneWidget);
+      expect(find.text('Notifications'), findsOneWidget);
+      expect(find.text('Usage Access'), findsOneWidget);
       expect(find.text('Default Rest Timer'), findsOneWidget);
       expect(find.text('Sound Alert'), findsOneWidget);
       expect(find.text('Vibration'), findsOneWidget);
       expect(find.text('Keep Screen Awake'), findsOneWidget);
-      expect(find.text('Allowed Apps'), findsOneWidget);
       expect(find.text('Focus Lift stores workout settings and preferences on this device. No account is required.'), findsOneWidget);
-    });
-
-    testWidgets('AllowedAppsScreen enables music selection', (tester) async {
-      tester.view.physicalSize = const Size(1080, 2400);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-
-      SharedPreferences.setMockInitialValues({});
-      final storage = await LocalStorageService.create();
-      final focusService = await FocusControlService.create();
-      AllowedWorkoutApps currentAllowed = const AllowedWorkoutApps();
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: AllowedAppsScreen(
-            storageService: storage,
-            focusService: focusService,
-            initialAllowed: currentAllowed,
-            onAllowedChanged: (updated) {
-              currentAllowed = updated;
-            },
-          ),
-        ),
-      );
-
-      await tester.pumpAndSettle();
-
-      expect(find.text('ALLOWED DURING WORKOUT'), findsOneWidget);
-      expect(find.text('Phone & Calls'), findsOneWidget);
-      expect(find.text('ALWAYS ON'), findsOneWidget);
-      expect(find.text('Music Playback'), findsOneWidget);
-      expect(find.text('Spotify'), findsOneWidget);
-      expect(find.text('YouTube Music'), findsOneWidget);
-
-      await tester.tap(find.text('Spotify'));
-      await tester.pumpAndSettle();
-
-      expect(currentAllowed.selectedMusicPackage, 'com.spotify.music');
-      expect(currentAllowed.selectedMusicAppName, 'Spotify');
     });
   });
 }

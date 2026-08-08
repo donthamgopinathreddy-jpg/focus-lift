@@ -6,7 +6,7 @@ import 'app_info.dart';
 import 'focus_authorization_status.dart';
 import 'focus_control_result.dart';
 
-/// Service responsible for Focus Control, allowlist management, and quick access bridges.
+/// Service responsible for Focus Control, permission checks, allowlist management, and quick access bridges.
 class FocusControlService {
   static const String channelName = 'com.cotrainr.focuslift/focus_control';
   static const String _prefSelectedDistractionsKey = 'focus_lift_selected_distractions';
@@ -28,7 +28,7 @@ class FocusControlService {
 
   bool get isSessionActive => _isSessionActive;
 
-  /// Checks the current platform authorization status.
+  /// Checks the current platform authorization status for usage access / Screen Time.
   Future<FocusAuthorizationStatus> getAuthorizationStatus() async {
     try {
       final String? result = await _channel.invokeMethod<String>('getAuthorizationStatus');
@@ -46,6 +46,38 @@ class FocusControlService {
       }
     } catch (_) {
       return FocusAuthorizationStatus.unsupported;
+    }
+  }
+
+  /// Checks if Usage Access is granted on Android / Screen Time on iOS.
+  Future<bool> isUsageAccessGranted() async {
+    final status = await getAuthorizationStatus();
+    return status == FocusAuthorizationStatus.authorized;
+  }
+
+  /// Checks if system notifications are enabled for Focus Lift.
+  Future<bool> areNotificationsEnabled() async {
+    try {
+      final bool? enabled = await _channel.invokeMethod<bool>('areNotificationsEnabled');
+      return enabled ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /// Opens the official system notification settings for this application.
+  Future<void> openNotificationSettings() async {
+    try {
+      await _channel.invokeMethod<void>('openNotificationSettings');
+    } catch (_) {}
+  }
+
+  /// Opens the official Android Settings.ACTION_USAGE_ACCESS_SETTINGS screen.
+  Future<void> openUsageAccessSettings() async {
+    try {
+      await _channel.invokeMethod<void>('openUsageAccessSettings');
+    } catch (_) {
+      await requestAuthorization();
     }
   }
 

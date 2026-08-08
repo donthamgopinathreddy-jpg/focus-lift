@@ -25,11 +25,24 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late AppPreferences _preferences;
+  bool _notificationsAllowed = true;
+  bool _usageAccessAllowed = false;
 
   @override
   void initState() {
     super.initState();
     _preferences = widget.initialPreferences;
+    _checkPermissionStatuses();
+  }
+
+  Future<void> _checkPermissionStatuses() async {
+    final notifs = await widget.focusService.areNotificationsEnabled();
+    final usage = await widget.focusService.isUsageAccessGranted();
+    if (!mounted) return;
+    setState(() {
+      _notificationsAllowed = notifs;
+      _usageAccessAllowed = usage;
+    });
   }
 
   void _updatePreferences(AppPreferences newPrefs) {
@@ -118,6 +131,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Future<void> _toggleOrOpenNotificationSettings() async {
+    await widget.focusService.openNotificationSettings();
+    await _checkPermissionStatuses();
+  }
+
+  Future<void> _toggleOrOpenUsageAccessSettings() async {
+    await widget.focusService.openUsageAccessSettings();
+    await _checkPermissionStatuses();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -188,8 +211,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 24),
 
+            // Section: Workout Mode Permissions
+            _buildSectionHeader('WORKOUT MODE PERMISSIONS'),
+            const SizedBox(height: 8),
+            _buildTileContainer(
+              child: Column(
+                children: [
+                  ListTile(
+                    title: const Text('Notifications', style: TextStyle(fontWeight: FontWeight.w700, color: AppTheme.primaryText)),
+                    subtitle: const Text('Rest completion alerts and return-to-workout shortcut', style: TextStyle(color: AppTheme.secondaryText, fontSize: 12)),
+                    trailing: Text(
+                      _notificationsAllowed ? 'Allowed' : 'Not Allowed',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: _notificationsAllowed ? AppTheme.successGreen : AppTheme.secondaryText,
+                      ),
+                    ),
+                    onTap: _toggleOrOpenNotificationSettings,
+                  ),
+                  const Divider(height: 1, color: AppTheme.border),
+                  ListTile(
+                    title: const Text('Usage Access', style: TextStyle(fontWeight: FontWeight.w700, color: AppTheme.primaryText)),
+                    subtitle: const Text('Helps detect when leaving the workout session', style: TextStyle(color: AppTheme.secondaryText, fontSize: 12)),
+                    trailing: Text(
+                      _usageAccessAllowed ? 'Allowed' : 'Not Allowed',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: _usageAccessAllowed ? AppTheme.successGreen : AppTheme.secondaryText,
+                      ),
+                    ),
+                    onTap: _toggleOrOpenUsageAccessSettings,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+
             // Section: Allowed Apps
-            _buildSectionHeader('WORKOUT PERMISSIONS'),
+            _buildSectionHeader('WORKOUT APPS & TOOLS'),
             const SizedBox(height: 8),
             _buildTileContainer(
               child: ListTile(
