@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import '../../app/theme.dart';
+import '../../models/allowed_workout_apps.dart';
 import '../../models/app_preferences.dart';
-import '../../models/focus_mode.dart';
 import '../../models/workout_session.dart';
 import '../../services/focus_control/focus_control_service.dart';
 import '../../services/local_storage_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/workout_session_service.dart';
-import '../focus/distraction_picker_screen.dart';
+import '../focus/allowed_apps_screen.dart';
 import '../settings/settings_screen.dart';
 import '../workout/workout_screen.dart';
 
@@ -34,7 +34,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late AppPreferences _preferences;
   late int _selectedRestDuration;
-  late FocusMode _selectedFocusMode;
+  late AllowedWorkoutApps _allowedApps;
   WorkoutSession? _unresolvedSession;
 
   final List<int> _quickRestOptions = const [30, 60, 90, 120];
@@ -44,7 +44,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _preferences = widget.initialPreferences;
     _selectedRestDuration = _preferences.defaultRestDurationSeconds;
-    _selectedFocusMode = _preferences.focusMode;
+    _allowedApps = _preferences.allowedApps;
     _checkForActiveSession();
   }
 
@@ -61,14 +61,6 @@ class _HomeScreenState extends State<HomeScreen> {
       _preferences = _preferences.copyWith(defaultRestDurationSeconds: seconds);
     });
     widget.storageService.saveRestDuration(seconds);
-  }
-
-  void _onFocusModeSelected(FocusMode mode) {
-    setState(() {
-      _selectedFocusMode = mode;
-      _preferences = _preferences.copyWith(focusMode: mode);
-    });
-    widget.storageService.saveFocusMode(mode);
   }
 
   void _showCustomRestDialog() {
@@ -115,20 +107,12 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                minimumSize: const Size(100, 44),
                 backgroundColor: AppTheme.primaryBlue,
               ),
               onPressed: () {
                 final parsed = int.tryParse(controller.text.trim());
                 if (parsed != null && parsed >= 10 && parsed <= 600) {
                   Navigator.pop(ctx, parsed);
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Please enter a duration between 10 and 600 seconds.'),
-                      backgroundColor: AppTheme.warningOrange,
-                    ),
-                  );
                 }
               },
               child: const Text('SET REST'),
@@ -143,17 +127,17 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  void _openSettings() {
+  void _openManageAllowedApps() {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (ctx) => SettingsScreen(
+        builder: (ctx) => AllowedAppsScreen(
           storageService: widget.storageService,
-          initialPreferences: _preferences,
-          onPreferencesChanged: (updated) {
+          focusService: widget.focusService,
+          initialAllowed: _allowedApps,
+          onAllowedChanged: (updated) {
             setState(() {
-              _preferences = updated;
-              _selectedRestDuration = updated.defaultRestDurationSeconds;
-              _selectedFocusMode = updated.focusMode;
+              _allowedApps = updated;
+              _preferences = _preferences.copyWith(allowedApps: updated);
             });
           },
         ),
@@ -161,11 +145,20 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _openDistractionPicker() {
+  void _openSettings() {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (ctx) => DistractionPickerScreen(
+        builder: (ctx) => SettingsScreen(
+          storageService: widget.storageService,
           focusService: widget.focusService,
+          initialPreferences: _preferences,
+          onPreferencesChanged: (updated) {
+            setState(() {
+              _preferences = updated;
+              _selectedRestDuration = updated.defaultRestDurationSeconds;
+              _allowedApps = updated.allowedApps;
+            });
+          },
         ),
       ),
     );
@@ -194,7 +187,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     ).then((_) {
-      // Recheck storage on return to home
       if (mounted) {
         setState(() {
           _checkForActiveSession();
@@ -223,77 +215,55 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Header & Branding with Settings Action
+              // Header Brand Row
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          color: AppTheme.surfaceElevated,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: AppTheme.border, width: 1.5),
-                        ),
-                        child: const Icon(
-                          Icons.fitness_center,
-                          color: AppTheme.accentBlue,
-                          size: 20,
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
+                      Text(
+                        'FOCUS LIFT',
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.5,
+                          color: AppTheme.primaryText,
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: const [
-                          Text(
-                            'FOCUS LIFT',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1.2,
-                              color: AppTheme.primaryText,
-                            ),
-                          ),
-                          Text(
-                            'TRAIN WITHOUT DISTRACTIONS',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 1.0,
-                              color: AppTheme.secondaryText,
-                            ),
-                          ),
-                        ],
+                      SizedBox(height: 2),
+                      Text(
+                        'TRAIN WITHOUT DISTRACTIONS',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.2,
+                          color: AppTheme.secondaryText,
+                        ),
                       ),
                     ],
                   ),
                   IconButton(
                     onPressed: _openSettings,
+                    icon: const Icon(Icons.settings_outlined, color: AppTheme.secondaryText),
                     tooltip: 'Settings',
-                    icon: const Icon(
-                      Icons.settings_outlined,
-                      color: AppTheme.secondaryText,
-                      size: 24,
-                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
 
-              // Active Workout Recovery Banner (if app was reopened during an unfinished workout)
+              // Unfinished Session Recovery Banner
               if (_unresolvedSession != null) ...[
                 Container(
-                  padding: const EdgeInsets.all(14),
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: AppTheme.surfaceElevated,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: AppTheme.primaryBlue, width: 1.5),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppTheme.accentBlue.withAlpha(100)),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.history_toggle_off, color: AppTheme.accentBlue, size: 24),
+                      const Icon(Icons.fitness_center_rounded, color: AppTheme.accentBlue, size: 24),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
@@ -303,16 +273,15 @@ class _HomeScreenState extends State<HomeScreen> {
                               'UNFINISHED WORKOUT',
                               style: TextStyle(
                                 fontSize: 13,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.8,
+                                fontWeight: FontWeight.w900,
                                 color: AppTheme.primaryText,
                               ),
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              '${_unresolvedSession!.setsCompleted} sets • ${_unresolvedSession!.currentState.label}',
+                              '${_unresolvedSession!.setsCompleted} sets completed',
                               style: const TextStyle(
-                                fontSize: 12,
+                                fontSize: 11,
                                 color: AppTheme.secondaryText,
                               ),
                             ),
@@ -321,26 +290,26 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       TextButton(
                         onPressed: _discardUnfinishedSession,
-                        child: const Text('DISCARD', style: TextStyle(color: AppTheme.secondaryText, fontSize: 11)),
+                        child: const Text('DISCARD', style: TextStyle(color: AppTheme.secondaryText, fontSize: 11, fontWeight: FontWeight.w800)),
                       ),
                       ElevatedButton(
+                        onPressed: () => _startWorkout(existingSession: _unresolvedSession),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.primaryBlue,
-                          minimumSize: const Size(80, 36),
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
-                        onPressed: () => _startWorkout(existingSession: _unresolvedSession),
                         child: const Text('RESUME', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
               ],
 
+              // Main Scrollable Setup
               Expanded(
                 child: SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -353,7 +322,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           return Expanded(
                             child: Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 4),
-                              child: _buildRestChoiceButton(
+                              child: _buildRestButton(
                                 label: '${secs}s',
                                 isSelected: isSelected,
                                 onTap: () => _onRestDurationSelected(secs),
@@ -362,25 +331,23 @@ class _HomeScreenState extends State<HomeScreen> {
                           );
                         }).toList(),
                       ),
-                      const SizedBox(height: 10),
-                      // Custom rest option
+                      const SizedBox(height: 8),
                       Align(
                         alignment: Alignment.centerRight,
                         child: TextButton.icon(
                           onPressed: _showCustomRestDialog,
                           icon: Icon(
                             Icons.tune,
-                            size: 16,
+                            size: 14,
                             color: isCustomSelected ? AppTheme.accentBlue : AppTheme.secondaryText,
                           ),
                           label: Text(
                             isCustomSelected
                                 ? 'CUSTOM: ${_selectedRestDuration}s'
-                                : 'CUSTOM REST',
+                                : 'Custom Rest',
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
-                              letterSpacing: 0.5,
                               color: isCustomSelected ? AppTheme.accentBlue : AppTheme.secondaryText,
                             ),
                           ),
@@ -388,84 +355,127 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(height: 24),
 
-                      // Section 2: FOCUS MODE
-                      _buildSectionTitle('FOCUS MODE'),
+                      // Section 2: ALLOWED DURING WORKOUT
+                      _buildSectionTitle('ALLOWED DURING WORKOUT'),
                       const SizedBox(height: 10),
-                      Row(
-                        children: FocusMode.values.map((mode) {
-                          final isSelected = _selectedFocusMode == mode;
-                          return Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 4),
-                              child: _buildFocusModeButton(
-                                mode: mode,
-                                isSelected: isSelected,
-                                onTap: () => _onFocusModeSelected(mode),
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                      const SizedBox(height: 12),
-                      // Description Card for selected focus mode
                       Container(
-                        padding: const EdgeInsets.all(14),
+                        padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
                           color: AppTheme.surface,
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(16),
                           border: Border.all(color: AppTheme.border),
                         ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        child: Column(
                           children: [
-                            const Icon(
-                              Icons.info_outline,
-                              size: 18,
-                              color: AppTheme.accentBlue,
+                            Row(
+                              children: [
+                                const Icon(Icons.music_note_rounded, color: AppTheme.accentBlue, size: 20),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'Music Playback',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w800,
+                                          color: AppTheme.primaryText,
+                                        ),
+                                      ),
+                                      Text(
+                                        _allowedApps.selectedMusicAppName != null
+                                            ? _allowedApps.selectedMusicAppName!
+                                            : (_allowedApps.musicAllowed ? 'Audio enabled' : 'Disabled'),
+                                        style: const TextStyle(fontSize: 11, color: AppTheme.secondaryText),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: _allowedApps.musicAllowed ? AppTheme.primaryBlue.withAlpha(30) : AppTheme.surfaceElevated,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    _allowedApps.musicAllowed ? 'ENABLED' : 'OFF',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w900,
+                                      color: _allowedApps.musicAllowed ? AppTheme.accentBlue : AppTheme.secondaryText,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                _selectedFocusMode.description,
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  color: AppTheme.secondaryText,
-                                  height: 1.4,
+                            const Divider(height: 24, color: AppTheme.border),
+                            Row(
+                              children: [
+                                const Icon(Icons.phone_in_talk_rounded, color: AppTheme.accentBlue, size: 20),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: const [
+                                      Text(
+                                        'Phone & Calls',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w800,
+                                          color: AppTheme.primaryText,
+                                        ),
+                                      ),
+                                      Text(
+                                        'Always available for essential use',
+                                        style: TextStyle(fontSize: 11, color: AppTheme.secondaryText),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.surfaceElevated,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Text(
+                                    'ALWAYS ON',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w900,
+                                      color: AppTheme.secondaryText,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton.icon(
+                                onPressed: _openManageAllowedApps,
+                                icon: const Icon(Icons.tune, size: 14, color: AppTheme.secondaryText),
+                                label: const Text(
+                                  'Manage Allowed Apps',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppTheme.secondaryText,
+                                  ),
                                 ),
                               ),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      // Subtle Configure Distractions action
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton.icon(
-                          onPressed: _openDistractionPicker,
-                          icon: const Icon(
-                            Icons.tune,
-                            size: 16,
-                            color: AppTheme.secondaryText,
-                          ),
-                          label: const Text(
-                            'CONFIGURE DISTRACTIONS',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.5,
-                              color: AppTheme.secondaryText,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 28),
                     ],
                   ),
                 ),
               ),
 
-              // Section 3: Large Dominant Primary CTA — START WORKOUT
+              // Section 3: Dominant Primary CTA — START FOCUS WORKOUT
               ElevatedButton(
                 onPressed: () => _startWorkout(),
                 style: ElevatedButton.styleFrom(
@@ -481,14 +491,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: const [
-                    Icon(Icons.play_arrow_rounded, size: 30),
-                    SizedBox(width: 8),
+                    Icon(Icons.flash_on_rounded, size: 24),
+                    SizedBox(width: 10),
                     Text(
-                      'START WORKOUT',
+                      'START FOCUS WORKOUT',
                       style: TextStyle(
-                        fontSize: 18,
+                        fontSize: 16,
                         fontWeight: FontWeight.w900,
-                        letterSpacing: 1.2,
+                        letterSpacing: 1.5,
                       ),
                     ),
                   ],
@@ -506,50 +516,16 @@ class _HomeScreenState extends State<HomeScreen> {
     return Text(
       title,
       style: const TextStyle(
-        fontSize: 12,
-        fontWeight: FontWeight.w800,
-        letterSpacing: 1.2,
+        fontSize: 11,
+        fontWeight: FontWeight.w900,
+        letterSpacing: 1.5,
         color: AppTheme.secondaryText,
       ),
     );
   }
 
-  Widget _buildRestChoiceButton({
+  Widget _buildRestButton({
     required String label,
-    required bool isSelected,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      color: isSelected ? AppTheme.primaryBlue : AppTheme.surface,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          height: 52,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isSelected ? AppTheme.accentBlue : AppTheme.border,
-              width: isSelected ? 1.5 : 1.0,
-            ),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-              color: isSelected ? Colors.white : AppTheme.primaryText,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFocusModeButton({
-    required FocusMode mode,
     required bool isSelected,
     required VoidCallback onTap,
   }) {
@@ -560,21 +536,20 @@ class _HomeScreenState extends State<HomeScreen> {
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Container(
-          height: 52,
+          height: 48,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: isSelected ? AppTheme.accentBlue : AppTheme.border,
-              width: isSelected ? 2.0 : 1.0,
+              width: isSelected ? 2 : 1,
             ),
           ),
           child: Text(
-            mode.label,
+            label,
             style: TextStyle(
-              fontSize: 13,
+              fontSize: 14,
               fontWeight: FontWeight.w800,
-              letterSpacing: 0.8,
               color: isSelected ? AppTheme.accentBlue : AppTheme.primaryText,
             ),
           ),

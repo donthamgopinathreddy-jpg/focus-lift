@@ -46,14 +46,14 @@ class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserv
     _preferences = widget.preferences;
     widget.sessionService.saveActiveSession(_session);
 
-    // Contextually request notification permissions for background rest alerts
+    // Request notification permission contextually
     widget.notificationService.requestPermission();
 
     // Enable wakelock if Keep Screen Awake is preferred
     WakelockService.setAwake(_preferences.keepScreenAwake);
 
-    // Start Focus session according to user's selected mode
-    widget.focusService.startFocusSession(_preferences.focusMode);
+    // Start Focus workout session with user's allowed apps configuration
+    widget.focusService.startFocusWorkout(_preferences.allowedApps);
 
     // Schedule notification if starting in resting state
     if (_session.currentState == WorkoutState.resting && _session.restEndsAt != null) {
@@ -77,7 +77,6 @@ class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserv
           _session = _session.copyWith(currentState: WorkoutState.restComplete);
           widget.sessionService.saveActiveSession(_session);
 
-          // Fire sound and haptic alert once when countdown reaches zero
           if (!_alertTriggered) {
             _alertTriggered = true;
             AlertService.triggerRestCompleteAlert(
@@ -137,7 +136,6 @@ class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserv
 
     widget.sessionService.saveActiveSession(_session);
 
-    // Schedule background rest complete alert
     if (_session.restEndsAt != null) {
       widget.notificationService.scheduleRestNotification(
         restEndsAt: _session.restEndsAt!,
@@ -170,6 +168,24 @@ class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserv
     });
 
     widget.sessionService.saveActiveSession(_session);
+  }
+
+  Future<void> _onQuickMusic() async {
+    final launched = await widget.focusService.launchMusicApp(
+      _preferences.allowedApps.selectedMusicPackage,
+    );
+    if (!launched && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Audio player active in background or default music app opened.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Future<void> _onQuickCall() async {
+    await widget.focusService.launchPhoneApp();
   }
 
   void _confirmFinishWorkout() {
@@ -345,63 +361,46 @@ class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserv
             ),
           ),
         ),
-        const SizedBox(height: 36),
+        const SizedBox(height: 28),
 
-        // Sets & Rest Info Card
+        // Sets Count Badge
         Container(
-          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
           decoration: BoxDecoration(
             color: AppTheme.surface,
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(16),
             border: Border.all(color: AppTheme.border),
           ),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Column(
-                children: [
-                  const Text(
-                    'SETS COMPLETED',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.0,
-                      color: AppTheme.secondaryText,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '${_session.setsCompleted}',
-                    style: const TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.w900,
-                      color: AppTheme.accentBlue,
-                    ),
-                  ),
-                ],
+              const Text(
+                'SET ',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.0,
+                  color: AppTheme.secondaryText,
+                ),
               ),
-              Container(width: 1, height: 44, color: AppTheme.border),
-              Column(
-                children: [
-                  const Text(
-                    'REST DURATION',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.0,
-                      color: AppTheme.secondaryText,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '${_session.selectedRestDuration} SEC',
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                      color: AppTheme.primaryText,
-                    ),
-                  ),
-                ],
+              Text(
+                '${_session.setsCompleted + 1}',
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                  color: AppTheme.accentBlue,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Container(width: 1, height: 20, color: AppTheme.border),
+              const SizedBox(width: 14),
+              Text(
+                '${_session.setsCompleted} COMPLETED',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: AppTheme.secondaryText,
+                ),
               ),
             ],
           ),
@@ -438,6 +437,11 @@ class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserv
             ],
           ),
         ),
+        const SizedBox(height: 14),
+
+        // Quick Access Controls: MUSIC & CALL
+        _buildQuickAccessRow(),
+
         const SizedBox(height: 12),
 
         // Visually Secondary Action: Finish Workout
@@ -518,65 +522,16 @@ class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserv
             ),
           ),
         ),
-        const SizedBox(height: 28),
+        const SizedBox(height: 20),
 
-        // Sets Progress Indicator
-        Container(
-          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-          decoration: BoxDecoration(
-            color: AppTheme.surface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppTheme.border),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              Column(
-                children: [
-                  const Text(
-                    'SETS COMPLETED',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.0,
-                      color: AppTheme.secondaryText,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${_session.setsCompleted}',
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w900,
-                      color: AppTheme.primaryText,
-                    ),
-                  ),
-                ],
-              ),
-              Container(width: 1, height: 36, color: AppTheme.border),
-              Column(
-                children: [
-                  const Text(
-                    'NEXT SET',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.0,
-                      color: AppTheme.secondaryText,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${_session.setsCompleted + 1}',
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w900,
-                      color: AppTheme.accentBlue,
-                    ),
-                  ),
-                ],
-              ),
-            ],
+        // Rest Set Indicator
+        Text(
+          'SET ${_session.setsCompleted} COMPLETE',
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.0,
+            color: AppTheme.secondaryText,
           ),
         ),
 
@@ -631,6 +586,11 @@ class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserv
               ),
             ),
           ),
+        const SizedBox(height: 14),
+
+        // Quick Access Controls: MUSIC & CALL
+        _buildQuickAccessRow(),
+
         const SizedBox(height: 12),
 
         // Visually Secondary Action: Finish Workout
@@ -646,6 +606,47 @@ class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserv
           ),
         ),
         const SizedBox(height: 8),
+      ],
+    );
+  }
+
+  Widget _buildQuickAccessRow() {
+    return Row(
+      children: [
+        if (_preferences.allowedApps.musicAllowed)
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: _onQuickMusic,
+              icon: const Icon(Icons.music_note_rounded, size: 18, color: AppTheme.accentBlue),
+              label: const Text(
+                'MUSIC',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 0.8),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: AppTheme.border),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ),
+        if (_preferences.allowedApps.musicAllowed && _preferences.allowedApps.callsAllowed)
+          const SizedBox(width: 10),
+        if (_preferences.allowedApps.callsAllowed)
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: _onQuickCall,
+              icon: const Icon(Icons.phone_in_talk_rounded, size: 18, color: AppTheme.accentBlue),
+              label: const Text(
+                'CALL',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 0.8),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: AppTheme.border),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ),
       ],
     );
   }

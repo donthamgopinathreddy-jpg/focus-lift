@@ -4,8 +4,10 @@ import android.app.AppOpsManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Process
+import android.provider.MediaStore
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -39,6 +41,50 @@ class MainActivity : FlutterActivity() {
                             result.success(false)
                         }
                     }
+                    "launchPhoneApp" -> {
+                        try {
+                            val dialIntent = Intent(Intent.ACTION_DIAL).apply {
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                            }
+                            startActivity(dialIntent)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.success(false)
+                        }
+                    }
+                    "launchMusicApp" -> {
+                        val pkg = call.argument<String?>("packageName")
+                        var launched = false
+                        if (!pkg.isNullOrEmpty()) {
+                            try {
+                                val launchIntent = packageManager.getLaunchIntentForPackage(pkg)?.apply {
+                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                }
+                                if (launchIntent != null) {
+                                    startActivity(launchIntent)
+                                    launched = true
+                                }
+                            } catch (e: Exception) {
+                                launched = false
+                            }
+                        }
+                        if (!launched) {
+                            try {
+                                val musicIntent = Intent(MediaStore.INTENT_ACTION_MUSIC_PLAYER).apply {
+                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                }
+                                startActivity(musicIntent)
+                                launched = true
+                            } catch (e: Exception) {
+                                launched = false
+                            }
+                        }
+                        result.success(launched)
+                    }
+                    "discoverInstalledMusicApps" -> {
+                        val musicApps = getMusicApplications()
+                        result.success(musicApps)
+                    }
                     "getLauncherApps" -> {
                         val apps = getLauncherApplications()
                         result.success(apps)
@@ -50,14 +96,12 @@ class MainActivity : FlutterActivity() {
                         result.success(null)
                     }
                     "startFocusSession" -> {
-                        // Start active workout reminder session
                         result.success(true)
                     }
                     "stopFocusSession" -> {
                         result.success(null)
                     }
                     "restoreNormalAccess" -> {
-                        // Fail-safe cleanup
                         result.success(null)
                     }
                     else -> {
@@ -114,5 +158,24 @@ class MainActivity : FlutterActivity() {
             // Graceful fallback
         }
         return appList.sortedBy { it["appName"]?.lowercase() ?: "" }
+    }
+
+    private fun getMusicApplications(): List<Map<String, String>> {
+        val appList = mutableListOf<Map<String, String>>()
+        val knownMusicKeywords = listOf("music", "spotify", "audio", "podcast", "radio", "sound", "yt music", "deezer", "tidal", "tunein", "pandora")
+        try {
+            val pm = packageManager
+            val allLauncher = getLauncherApplications()
+            for (app in allLauncher) {
+                val name = app["appName"]?.lowercase() ?: ""
+                val pkg = app["packageName"]?.lowercase() ?: ""
+                if (knownMusicKeywords.any { name.contains(it) || pkg.contains(it) }) {
+                    appList.add(app)
+                }
+            }
+        } catch (e: Exception) {
+            // Graceful fallback
+        }
+        return appList
     }
 }

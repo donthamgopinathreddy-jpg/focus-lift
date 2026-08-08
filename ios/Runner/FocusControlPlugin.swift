@@ -58,6 +58,42 @@ class FocusControlPlugin: NSObject, FlutterPlugin {
             result(false)
             #endif
 
+        case "launchPhoneApp":
+            if let url = URL(string: "telprompt:") ?? URL(string: "tel:") {
+                if UIApplication.shared.canOpenURL(url) {
+                    UIApplication.shared.open(url, options: [:]) { success in
+                        result(success)
+                    }
+                } else {
+                    result(false)
+                }
+            } else {
+                result(false)
+            }
+
+        case "launchMusicApp":
+            // Try Apple Music, Spotify, or default audio schemes
+            let schemes = ["music://", "spotify://", "amazonmusic://"]
+            var opened = false
+            for scheme in schemes {
+                if let url = URL(string: scheme), UIApplication.shared.canOpenURL(url) {
+                    UIApplication.shared.open(url, options: [:], completionHandler: nil)
+                    opened = true
+                    break
+                }
+            }
+            result(opened)
+
+        case "discoverInstalledMusicApps":
+            var apps: [[String: String]] = []
+            if let musicUrl = URL(string: "music://"), UIApplication.shared.canOpenURL(musicUrl) {
+                apps.append(["appName": "Apple Music", "packageName": "com.apple.Music"])
+            }
+            if let spotifyUrl = URL(string: "spotify://"), UIApplication.shared.canOpenURL(spotifyUrl) {
+                apps.append(["appName": "Spotify", "packageName": "com.spotify.client"])
+            }
+            result(apps)
+
         case "openAppPicker":
             result(nil)
 
@@ -69,7 +105,6 @@ class FocusControlPlugin: NSObject, FlutterPlugin {
             if #available(iOS 16.0, *) {
                 // Apply managed shield store for active workout session
                 let store = ManagedSettingsStore(named: .init("com.cotrainr.focuslift.workout"))
-                // Apply shielding to selected token set
                 result(true)
             } else {
                 result(false)

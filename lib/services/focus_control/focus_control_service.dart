@@ -1,12 +1,12 @@
 import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../models/focus_mode.dart';
+import '../../models/allowed_workout_apps.dart';
 import 'app_info.dart';
 import 'focus_authorization_status.dart';
 import 'focus_control_result.dart';
 
-/// Service responsible for Focus Control and platform-specific shield/nudge bridges.
+/// Service responsible for Focus Control, allowlist management, and quick access bridges.
 class FocusControlService {
   static const String channelName = 'com.cotrainr.focuslift/focus_control';
   static const String _prefSelectedDistractionsKey = 'focus_lift_selected_distractions';
@@ -66,6 +66,51 @@ class FocusControlService {
     } catch (_) {}
   }
 
+  /// Launches the user's selected music app or standard system audio player.
+  Future<bool> launchMusicApp([String? packageName]) async {
+    try {
+      final bool? launched = await _channel.invokeMethod<bool>('launchMusicApp', {
+        'packageName': packageName,
+      });
+      return launched ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Opens the standard system dialer for essential or emergency calls.
+  Future<bool> launchPhoneApp() async {
+    try {
+      final bool? launched = await _channel.invokeMethod<bool>('launchPhoneApp');
+      return launched ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Discovers installed music and audio streaming applications on the device.
+  Future<List<AppInfo>> discoverInstalledMusicApps() async {
+    try {
+      final List<dynamic>? apps =
+          await _channel.invokeListMethod<dynamic>('discoverInstalledMusicApps');
+      if (apps == null) return [];
+
+      return apps.map((item) {
+        if (item is Map) {
+          final pkg = item['packageName'] as String? ?? '';
+          final name = item['appName'] as String? ?? pkg;
+          return AppInfo(
+            appName: name,
+            packageName: pkg,
+          );
+        }
+        return const AppInfo(appName: 'Unknown', packageName: '');
+      }).where((app) => app.packageName.isNotEmpty).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   /// Returns user-launchable applications discovered on the device.
   Future<List<AppInfo>> getLauncherApps() async {
     try {
@@ -92,7 +137,7 @@ class FocusControlService {
     }
   }
 
-  /// Returns the saved list of distracting package identifiers.
+  /// Returns the saved list of custom distracting/allowed package identifiers.
   Future<List<String>> getSelectedDistractions() async {
     if (_prefs != null) {
       return _prefs.getStringList(_prefSelectedDistractionsKey) ?? [];
@@ -101,7 +146,7 @@ class FocusControlService {
     return prefs.getStringList(_prefSelectedDistractionsKey) ?? [];
   }
 
-  /// Saves the user's selected distracting packages locally on the device.
+  /// Saves the user's selected packages locally on the device.
   Future<void> saveSelectedDistractions(List<String> packageNames) async {
     if (_prefs != null) {
       await _prefs.setStringList(_prefSelectedDistractionsKey, packageNames);
@@ -117,31 +162,27 @@ class FocusControlService {
     } catch (_) {}
   }
 
-  /// Starts an active focus control session during a workout.
-  Future<FocusControlResult> startFocusSession(FocusMode mode) async {
+  /// Starts an active focus control session with the user's allowed workout apps.
+  Future<FocusControlResult> startFocusWorkout(AllowedWorkoutApps allowed) async {
     _isSessionActive = true;
     final status = await getAuthorizationStatus();
-    final selectedPackages = await getSelectedDistractions();
 
     try {
       final bool? success = await _channel.invokeMethod<bool>('startFocusSession', {
-        'mode': mode.name,
-        'selectedPackages': selectedPackages,
+        'allowed': allowed.toMap(),
       });
 
       if (success == true) {
-        return FocusControlResult.active(mode);
+        return FocusControlResult.active();
       } else {
         return FocusControlResult.reduced(
           status: status,
-          mode: mode,
           message: 'Workout active with standard timer.',
         );
       }
     } catch (_) {
       return FocusControlResult.reduced(
         status: status,
-        mode: mode,
         message: 'Workout active with standard timer.',
       );
     }
