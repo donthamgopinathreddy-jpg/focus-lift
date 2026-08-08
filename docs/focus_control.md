@@ -2,20 +2,28 @@
 
 ## Executive Summary
 
-Focus Lift aims to solve one primary problem: **eliminating phone distractions during physical workouts**. To deliver on the brand promise of *"Train Without Distractions"*, the application must provide effective focus modes (Focus, Balanced, Custom) while remaining **100% compliant with Google Play Policies and Apple App Store Review Guidelines**.
+Focus Lift addresses a widespread problem during physical training: **loss of focus caused by smartphone distractions**. The product promise is *"Train Without Distractions"*.
 
-This document analyzes all official platform mechanisms on Android and iOS, evaluates store rejection risks, establishes feasibility for focus statistics, and outlines a compliant, robust native architecture for Phase 5.
+To ensure Focus Lift can be published and maintained on **Google Play** and the **Apple App Store**, this document analyzes the current official technical capabilities, platform policies, entitlement requirements, and user experience constraints of both Android and iOS.
+
+**Critical Platform Finding:**
+Android and iOS operate on fundamentally different security and privacy architectures. Consequently, **Android and iOS will NOT provide identical app-blocking behavior**:
+- **iOS:** Supports official, native OS-level application shielding via Apple's **Screen Time APIs** (`FamilyControls`, `ManagedSettings`), subject to Apple's distribution entitlement review.
+- **Android:** Does not provide a dedicated consumer app-shielding API. Android will implement a **Compliant Distraction Detection and Reminder Model** (via optional Usage Access and actionable notifications/reminders), avoiding high-risk policy practices.
 
 ---
 
-## Product Requirement
+## Product Requirement & Focus Modes
 
-Focus Lift defines three workout focus tiers:
-1. **FOCUS MODE:** Maximum restriction on distracting apps (social media, short-form video, games, algorithmic feeds). Normal phone calls, emergency services, and audio/music streaming applications remain fully permitted.
-2. **BALANCED MODE:** Restricts primary algorithmic distractions while allowing essential communication tools (calls, messaging) and music.
-3. **CUSTOM MODE:** The user explicitly selects which specific applications to restrict or allow.
+Focus Lift defines three focus modes:
+1. **FOCUS MODE:** Restricts major algorithmic distractions (social media, short-form video, games) during active sets and rest periods. Phone calls, emergency functionality, and permitted music playback remain accessible.
+2. **BALANCED MODE:** Restricts high-friction entertainment apps while allowing essential communication tools (calls, messaging) and music.
+3. **CUSTOM MODE:** The user configures specific applications or categories according to their training preferences.
 
-**Core Safety Requirement:** Focus Lift must **never trap the user**, never interfere with emergency 911/112 services, never block phone calls, fail open on crash/reboot, and maintain 100% on-device privacy with zero external backend servers.
+### Core Safety Rules
+- **No Trapping:** The app must fail open if terminated, crashed, or rebooted.
+- **Emergency Protection:** Focus Lift will not intentionally shield or interfere with system emergency functionality (e.g., 911/112), and the respective operating systems govern emergency override behaviors.
+- **Privacy First:** 100% on-device operation with zero remote databases, zero analytics tracking, and no external servers.
 
 ---
 
@@ -24,84 +32,102 @@ Focus Lift defines three workout focus tiers:
 ### UsageStatsManager (`PACKAGE_USAGE_STATS`)
 
 - **Capabilities:**
-  - Queries system usage logs to inspect timestamped foreground transitions (`UsageEvents.Event.ACTIVITY_RESUMED` / `MOVE_TO_FOREGROUND`).
-  - Provides empirical data on when and how long third-party applications were in the foreground.
+  - Queries system usage logs to inspect timestamped foreground transitions (`UsageEvents.Event.ACTIVITY_RESUMED` or `MOVE_TO_FOREGROUND`).
+  - Allows detecting when a user has navigated away from Focus Lift to another application during an active workout session.
 - **Permissions & User Flow:**
   - Requires `android.permission.PACKAGE_USAGE_STATS`.
-  - Cannot be granted via a simple in-app runtime dialog; the user must be deep-linked to the system settings screen (`Settings.ACTION_USAGE_ACCESS_SETTINGS`).
+  - Cannot be granted through a standard runtime dialog. Focus Lift must direct the user to the system settings screen (`Settings.ACTION_USAGE_ACCESS_SETTINGS`) with clear explanatory context.
 - **Technical Limitations:**
-  - **Read-Only Detection:** `UsageStatsManager` provides observation only. It **cannot** intercept, block, or prevent an app from launching.
-  - Event polling in the background is subject to Android battery optimizations (Doze mode, OEM process killing).
+  - **Read-Only Detection:** `UsageStatsManager` provides observation only; it cannot intercept, close, or prevent an application from opening.
+  - Background event querying is subject to OEM battery management and Android Doze modes.
 - **Google Play Policy Considerations:**
-  - Permitted for digital wellbeing and fitness utilities, provided a clear in-app prominent disclosure is presented before redirecting to system settings.
-  - `QUERY_ALL_PACKAGES` is heavily restricted on Google Play; apps should use targeted `<queries>` or user-directed package selection rather than requesting broad inventory access without justification.
-- **Verdict:** **Recommended for Detection & Focus Metrics** (read-only monitoring; cannot perform hard blocking).
+  - Google Play permits Usage Access when directly relevant to user-facing digital wellbeing, focus, or productivity features.
+  - Prominent in-app disclosure and explicit user consent are mandatory prior to launching the system settings intent.
+- **Verdict:** **Recommended for Distraction Detection & Workout Return Nudges (Read-Only).**
 
 ---
 
 ### AccessibilityService (`BIND_ACCESSIBILITY_SERVICE`)
 
-- **Capabilities:**
-  - Receives real-time `AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED` events whenever any application is opened.
-  - Can programmatically invoke `GLOBAL_ACTION_HOME` or launch an intent immediately upon detecting a restricted package, forcefully redirecting the user back to Focus Lift.
-- **Google Play Policy (CRITICAL RISK):**
-  - Google Play's **Accessibility API Policy** explicitly restricts the use of `AccessibilityService` to applications designed to assist users with disabilities or explicitly approved enterprise tools.
-  - Google's developer policy states: *"The Accessibility API is not designed and cannot be requested for call recording or broad app-blocking without meeting strict disability assistance criteria."*
-  - Consumer fitness or productivity apps using AccessibilityService to block apps face an estimated **>90% rejection rate** or subsequent permanent removal from the Google Play Store.
-- **Verdict:** **NOT RECOMMENDED / HIGH REJECTION RISK.** Must be avoided for production store releases.
-
----
-
-### SYSTEM_ALERT_WINDOW / Overlays
-
-- **Capabilities:**
-  - Displays a floating window or "Workout in Progress" shield on top of other running applications using `WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY`.
-- **Permissions & Technical Limitations:**
-  - Requires `android.permission.SYSTEM_ALERT_WINDOW` granted via `Settings.ACTION_MANAGE_OVERLAY_PERMISSION`.
-  - Android 10+ background activity launch restrictions prevent background services from launching overlays without user interaction or a high-priority notification trampoline.
-  - Android 12+ enforces untrusted touch blocking to prevent tapjacking.
+- **Technical Capabilities:**
+  - Receives real-time window state change events (`AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED`) containing the package name of the active foreground window.
+  - Can programmatically trigger `performGlobalAction(GLOBAL_ACTION_HOME)` or launch an intent to redirect the user back to Focus Lift when a restricted app is opened.
 - **Google Play Policy Considerations:**
-  - Overlays that trap the user, obscure system navigation, or simulate malicious lockouts violate the **Deceptive Behavior** and **Device Abuse** policies.
-  - Non-deceptive, dismissible workout reminder banners with clear `[RETURN TO WORKOUT]` and `[DISMISS]` buttons are permitted if accompanied by prominent disclosure.
-- **Verdict:** **Possible With Limitations (Gentle Non-Blocking Reminder Shield).**
+  - Google Play's **Accessibility API Policy** regulates the use of accessibility services. While Google does permit AccessibilityService for non-disability use cases under specific conditions, the app must:
+    1. Complete a dedicated Play Console declaration justifying why no alternative Android API can fulfill the core feature.
+    2. Provide a prominent in-app disclosure explaining exactly what data is collected and how the service is used.
+    3. Obtain explicit user consent prior to requesting the permission.
+    4. Adhere strictly to Google Play User Data policies (no keystroke logging, no unauthorized data transmission).
+  - Google Play heavily scrutinizes apps using accessibility services for app-locking or restriction, and policy updates frequently narrow permitted usage.
+- **Verdict:** **NOT RECOMMENDED for Focus Lift V1.** Narrower, safer APIs (UsageStats and actionable notifications) are preferred to ensure long-term stability and minimize store review friction.
 
 ---
 
-### DevicePolicyManager / Lock Task Mode / Kiosk
+### Overlays (`SYSTEM_ALERT_WINDOW`)
 
 - **Capabilities:**
-  - `startLockTask()` locks the device screen strictly to the active application.
-- **Technical Limitations:**
-  - Without Device Owner / Profile Owner provisioning (MDM/Enterprise enrollment via QR code or adb during factory setup), `startLockTask()` displays a system pinning prompt that any user can exit by holding Back + Overview.
-  - Genuine unescapable Lock Task mode requires Device Owner provisioning, which is completely unavailable for ordinary consumer apps distributed through Google Play.
+  - Displays a floating window or "Workout in Progress" reminder banner over other running applications using `WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY`.
+- **Permissions & Technical Constraints:**
+  - Requires `android.permission.SYSTEM_ALERT_WINDOW`, requiring user authorization via `Settings.ACTION_MANAGE_OVERLAY_PERMISSION`.
+  - Android 10+ restricts starting activities directly from background services.
+  - Android 12+ restricts touch pass-through (`FLAG_NOT_TOUCHABLE`) to safeguard against tapjacking.
+  - OEM variations (e.g., MIUI, One UI, ColorOS) often impose custom background overlay restrictions that can prevent reliable presentation unless explicitly enabled in device-specific settings.
+- **Google Play Policy Considerations:**
+  - Google Play's **Deceptive Behavior** and **Device and Network Abuse** policies prohibit intrusive overlays that trap users, obscure navigation buttons, or prevent closing the overlay.
+  - An overlay is only acceptable if it is clearly branded, non-deceptive, dismissible, and provides immediate navigation back to the app or exit options (`[RETURN TO WORKOUT]`, `[DISMISS]`).
+- **Verdict:** **Possible as an Optional Secondary Feature with Caution.** For V1, Focus Lift will prioritize in-app reminders and high-priority notifications, treating full-screen overlays as optional and strictly non-blocking.
+
+---
+
+### DevicePolicyManager & Kiosk Mode
+
+- **Capabilities & Limitations:**
+  - Lock Task Mode (`startLockTask()`) without Device Owner privileges allows standard screen pinning, which any user can easily exit by holding Back + Overview.
+  - Full, inescapable kiosk mode requires the app to be provisioned as a **Device Owner** or **Profile Owner** via MDM (Mobile Device Management) or factory provisioning.
+- **Policy & Practicality:**
+  - Device Owner provisioning is designed for enterprise-managed corporate fleets, not standard consumer apps distributed via Google Play.
 - **Verdict:** **NOT VIABLE for consumer Google Play distribution.**
 
 ---
 
-### Android Digital Wellbeing & Focus Mode APIs
+### Digital Wellbeing & Public APIs
 
 - **Capabilities & Limitations:**
-  - Android's native Digital Wellbeing / Focus Mode features are system-level privileges (`android.permission.CONTROL_KEYGUARD`, system-signed apps).
-  - Google provides **no public third-party SDK or Intent API** allowing standard Play Store applications to pause, hide, or restrict arbitrary installed apps through Digital Wellbeing.
-- **Verdict:** **NOT VIABLE (No public API exists).**
+  - Android's native Digital Wellbeing and Focus Mode features operate under system-level permissions (`CONTROL_KEYGUARD`, system-signed firmware).
+  - Google provides no public third-party SDK or intent interface permitting consumer applications to pause, hide, or restrict arbitrary packages through the OS Focus Mode.
+- **Verdict:** **NOT VIABLE (No public third-party API exists).**
 
 ---
 
-### Other Approaches (VPN, Custom Launcher, Local DNS)
+### Other Approaches (VPN, Custom Launcher)
 
-- **Local VPN (`VpnService`):** Can intercept and sinkhole network traffic (blocking social feeds), but cannot prevent offline games, downloaded media, or local app usage. Violates Google Play's strict `VpnService` policy unless the app's primary purpose is a VPN or Antivirus tool.
-- **Custom Launcher:** Requires the user to replace their entire home screen launcher. Excessively invasive and impractical for a workout utility.
+- **Local VPN (`VpnService`):** Intercepts network packets to block social feed data, but does not stop offline apps or cached media, increases battery drain, and triggers strict Google Play VpnService policies.
+- **Custom Launcher:** Overly intrusive and completely unsuitable for a simple workout utility.
 - **Verdict:** **NOT VIABLE.**
 
 ---
 
-### Recommended Android Architecture
+### Android Package Visibility (`QUERY_ALL_PACKAGES` vs Narrower Alternatives)
 
-Because Android does not offer a public third-party app-shielding API without violating Google Play policies, Focus Lift will employ a **Compliant Accountability & Shield Model**:
-1. **Usage Access Monitoring (`UsageStatsManager`):** Tracks when distracting apps are opened during an active workout session.
-2. **Persistent High-Priority Focus Notification:** While a workout is active, Focus Lift maintains an actionable notification (`"Workout Active • Set 3 • Tap to Return"`).
-3. **Optional Non-Intrusive Workout Shield (`SYSTEM_ALERT_WINDOW`):** If the user grants overlay permission, Focus Lift displays a clean, branded reminder overlay when a restricted app is brought to the foreground, providing a one-tap `[RETURN TO WORKOUT]` button and an immediate `[DISMISS]` escape hatch.
-4. **Emergency & Audio Hard-Allowlist:** `com.android.server.telecom`, default dialers, SMS, Spotify, YouTube Music, and Apple Music are permanently exempted from alerts.
+- **Google Play Policy on `QUERY_ALL_PACKAGES`:**
+  - Google Play restricts `QUERY_ALL_PACKAGES` to apps with broad inventory search requirements (e.g., file managers, device search, antivirus). Apps failing to justify broad inventory access face rejection.
+- **Narrower Compliant Alternatives for Focus Lift:**
+  1. **Launcher Activity Query:** Query only applications that declare `Intent.ACTION_MAIN` and `Intent.CATEGORY_LAUNCHER`.
+  2. **Targeted `<queries>` Elements:** Declare specific package intents in `AndroidManifest.xml` for well-known distraction categories.
+  3. **Usage Access Discovery:** Identify foreground package events via `UsageStatsManager` without scanning entire device inventories.
+- **Decision:** Focus Lift will **avoid `QUERY_ALL_PACKAGES`** and rely on launcher-resolvable queries or user-selected app configurations.
+
+---
+
+### Recommended Android Architecture (V1)
+
+Focus Lift on Android will adopt a **Compliant Distraction Detection and Reminder Model**:
+1. **No Hard Blocking:** Focus Lift will not forcefully close or hijack third-party apps.
+2. **Optional Usage Access (`PACKAGE_USAGE_STATS`):** Detects when a user navigates away from Focus Lift during an active workout session.
+3. **Actionable Workout Notifications:** Displays a persistent high-priority notification during active workouts (`"Workout Active • Set 3 • Tap to return"`).
+4. **In-App Accountability:** Prompts the user to return when Focus Lift is resumed.
+5. **No Dangerous Permissions:** Does not use `AccessibilityService`, `DeviceAdminReceiver`, or `QUERY_ALL_PACKAGES`.
+6. **Hard Allowlist:** Phone dialer, emergency calls, and audio apps (Spotify, YouTube Music, Apple Music) are never flagged.
 
 ---
 
@@ -109,7 +135,7 @@ Because Android does not offer a public third-party app-shielding API without vi
 
 ### Apple Screen Time API Suite
 
-Starting with iOS 15/16, Apple introduced the modern, privacy-first **Screen Time API Suite** comprising:
+Starting in iOS 15/16, Apple provides the official **Screen Time Frameworks**:
 1. `FamilyControls`
 2. `ManagedSettings`
 3. `DeviceActivity`
@@ -120,67 +146,64 @@ Starting with iOS 15/16, Apple introduced the modern, privacy-first **Screen Tim
 ### FamilyControls & Authorization
 
 - **Capabilities:**
-  - Grants the app access to Screen Time controls.
-  - Supports `AuthorizationCenter.shared.requestAuthorization(for: .individual)` for self-control and personal focus utilities (iOS 16+).
-- **User Experience:**
-  - When invoked, iOS displays an official Apple system prompt: *"Focus Lift would like to access Screen Time to manage app restrictions during workouts."*
-  - Requires Face ID / Touch ID / Device Passcode to authorize.
+  - In iOS 16+, `AuthorizationCenter.shared.requestAuthorization(for: .individual)` supports individual self-control and personal focus use cases without requiring a parental Family Sharing group.
+  - Presents Apple's official system authentication dialog (Face ID / Touch ID / Passcode).
 
 ---
 
 ### FamilyActivityPicker
 
-- **Capabilities:**
-  - Apple's official system picker sheet allows users to select individual apps, entire categories (e.g., Social, Games, Entertainment), and web domains.
-- **Privacy Architecture:**
-  - Focus Lift **never receives bundle identifiers, app names, or package strings**.
-  - Selections are returned as opaque, encrypted `ApplicationToken` and `ActivityCategoryToken` objects stored securely in local `AppGroup` or `UserDefaults`.
+- **Capabilities & Privacy:**
+  - Presents Apple's native SwiftUI picker sheet allowing the user to select specific apps, entire categories (e.g., Social, Games, Entertainment), and web domains.
+  - **Zero Knowledge Privacy:** Focus Lift never receives bundle identifiers, application names, or icons. The OS returns opaque `ApplicationToken` and `ActivityCategoryToken` structures.
+  - Tokens are persisted securely on-device (via `UserDefaults` or App Group).
 
 ---
 
 ### ManagedSettings (`ManagedSettingsStore`)
 
 - **Capabilities:**
-  - `ManagedSettingsStore()` allows instant, programmatic shielding of selected applications and categories during an active workout:
+  - Enables direct, programmatic application and category shielding during active workouts:
     ```swift
     let store = ManagedSettingsStore(named: .workoutFocus)
     store.shield.applications = selectedAppTokens
     store.shield.applicationCategories = .specific(selectedCategoryTokens)
     ```
   - When shielded, opening a restricted app immediately displays Apple's native **Screen Time Shield UI**.
-  - Calling `store.clearAllSettings()` or setting `store.shield.applications = nil` instantly restores full access when the workout ends.
-- **Emergency & Communication Safety:**
-  - Phone calls (Phone.app), Messages (if unshielded), and system emergency features (SOS) are protected at the kernel level and cannot be locked out.
-  - Music streaming apps (Spotify, Apple Music) are left unselected in `FamilyActivityPicker`, ensuring continuous background audio playback during workouts.
+  - Clearing shields on workout finish (`store.clearAllSettings()` or `store.shield.applications = nil`) instantly restores access.
+- **System Emergency Behavior:**
+  - Phone calls and system emergency services are managed by Apple's operating system and will not be blocked by Focus Lift.
+  - Permitted audio applications (Spotify, Apple Music) are left unshielded by excluding their tokens from the store selection.
 
 ---
 
-### DeviceActivity
+### DeviceActivity & Usage Analytics Separation
 
-- **Role:**
-  - `DeviceActivity` is designed for scheduled recurring time windows and total duration monitoring.
-  - For Focus Lift's on-demand workout sessions (Start Workout ➔ End Workout), direct control via `ManagedSettingsStore` is faster, simpler, and does not require complex background schedule extensions.
-
----
-
-### Entitlements & App Store Distribution
-
-- **Entitlement Key:** `com.apple.developer.family-controls`
-- **Development vs. Distribution:**
-  - **Local Development / Simulator / Ad-Hoc:** Works out-of-the-box with a standard paid Apple Developer account.
-  - **App Store / TestFlight Distribution:** Requires submitting an **Apple Family Controls Distribution Request** form via the Apple Developer portal.
-- **App Store Review Guidelines:**
-  - Under Section 5.4 (Screen Time APIs), Apple explicitly permits individual self-focus and productivity applications that use `.individual` authorization and provide clear user disclosures.
+- **Immediate Session Control vs Scheduled Monitoring:**
+  - Direct workout sessions (Start Workout ➔ End Workout) are controlled immediately via `ManagedSettingsStore` without requiring complex background `DeviceActivitySchedule` timers.
+- **Opaque Tokens vs Detailed Bundle Analytics:**
+  - `FamilyControls` tokens allow **shielding** apps, but do not provide raw bundle IDs or real-time tap event logs to the parent app.
+  - Accessing detailed app-and-website activity reports requires separate reporting extensions (`DeviceActivityReportExtension`) and specialized entitlements (`com.apple.developer.family-controls.app-and-website-activity`).
 
 ---
 
-### Recommended iOS Architecture
+### Entitlements & App Store Review
 
-1. **Native Swift Plugin (`FocusControlPlugin.swift`):**
-   - Communicates with Flutter via `MethodChannel('com.cotrainr.focuslift/focus_control')`.
-2. **`FamilyControls.AuthorizationCenter`:** Manages `.individual` permission requests.
-3. **`FamilyActivityPicker`:** Modal presentation for selecting distracting app tokens.
-4. **`ManagedSettingsStore`:** Instantly applies shields on `startWorkout()` and completely clears shields on `finishWorkout()`.
+- **Entitlement Key:** `com.apple.developer.family-controls`.
+- **Development vs App Store Distribution:**
+  - **Local Development / Simulator / Ad-Hoc:** Supported with standard Apple Developer account provisioning.
+  - **TestFlight / App Store Distribution:** Requires submitting an official **Family Controls Distribution Request** to Apple Developer Relations.
+- **App Store Review Guidelines (Guideline 5.4):**
+  - Apple permits individual focus and wellbeing applications using `.individual` authorization, provided the app clearly communicates its purpose and does not mislead users.
+
+---
+
+### Recommended iOS Architecture (V1)
+
+1. **Native Swift Plugin (`FocusControlPlugin.swift`):** Communicates with Flutter via `MethodChannel('com.cotrainr.focuslift/focus_control')`.
+2. **`FamilyControls` Authorization:** Manages `.individual` Screen Time permission.
+3. **`FamilyActivityPicker`:** Modal presentation for user selection of opaque application/category tokens.
+4. **`ManagedSettingsStore`:** Applies OS shields on `startWorkout()` and unconditionally clears shields on `finishWorkout()`, `skipRest()`, discard, or crash recovery.
 
 ---
 
@@ -188,61 +211,58 @@ Starting with iOS 15/16, Apple introduced the modern, privacy-first **Screen Tim
 
 | Capability | Android | iOS |
 | :--- | :--- | :--- |
-| **Official OS Shield/Block Support** | ❌ No public third-party blocking API | ✅ Yes (`ManagedSettingsStore`) |
-| **Official App Picker** | ⚠️ Custom app list / Intent picker | ✅ Yes (`FamilyActivityPicker`) |
-| **Shield Selected Apps at OS Level** | ❌ Not supported without policy violation | ✅ Supported natively |
-| **Permit Background Music (Spotify/Apple Music)** | ✅ Yes (Hard allowlist) | ✅ Yes (Unshielded token) |
-| **Allow Normal & Emergency Calls** | ✅ Yes (Never blocked) | ✅ Yes (Protected at OS level) |
-| **Custom In-Workout Return Shield** | ⚠️ Non-intrusive Overlay (`SYSTEM_ALERT_WINDOW`) | ✅ Native Screen Time Shield UI |
+| **Official OS Shield/Block API** | ❌ No consumer shielding API | ✅ Yes (`ManagedSettingsStore`) |
+| **Official System App Picker** | ❌ None (Custom launcher query / list) | ✅ Yes (`FamilyActivityPicker`) |
+| **Shield Selected Apps at OS Level** | ❌ Not supported without policy risk | ✅ Supported natively |
+| **Permit Background Audio (Spotify/Music)** | ✅ Yes (Hard allowlist) | ✅ Yes (Unshielded token) |
+| **Emergency Functionality & Calls** | ✅ Normal device calls accessible | ✅ Managed by OS; unshielded |
 | **Detect Distraction Attempts Legitimate Count** | ⚠️ Only with `PACKAGE_USAGE_STATS` | ❌ Opaque tokens (Privacy restriction) |
-| **Special Store Entitlement Request Required** | ❌ No (Standard Android permissions) | ✅ Yes (`Family Controls Distribution`) |
-| **Store Rejection Risk if Hard-Blocking Forced** | 🚨 **EXTREME** (if AccessibilityService is used) | 🟢 **LOW** (Standard Screen Time compliance) |
-| **100% Offline / No Backend Required** | ✅ Yes | ✅ Yes |
+| **Requires Special Distribution Entitlement Approval** | ❌ No (Standard Android permissions) | ✅ Yes (`Family Controls Distribution`) |
+| **Store Policy Compliance Risk** | 🟢 Low (with Reminder Model) | 🟢 Low (with approved entitlement) |
+| **100% Offline / Zero Backend Required** | ✅ Yes | ✅ Yes |
 
 ---
 
 ## Focus Score Feasibility
 
-- **Android:** With `PACKAGE_USAGE_STATS`, Focus Lift can calculate foreground switch counts. However, without this optional permission, data cannot be gathered.
-- **iOS:** Apple deliberately obscures real-time shield touch events for privacy. The parent application is **not** notified when a user attempts to open a shielded app.
-- **Conclusion:** **Focus Score and Distraction Attempts MUST REMAIN HIDDEN on the Summary Screen** in V1. Fabricating or estimating these metrics violates Focus Lift’s integrity principles.
+- **iOS:** Apple's Screen Time architecture deliberately does not notify third-party apps when a user attempts to open a shielded app.
+- **Android:** While `UsageStatsManager` can detect foreground switches if permission is granted, it cannot be measured if the permission is withheld.
+- **Decision:** **Focus Score and Distraction Attempts MUST REMAIN HIDDEN on the Summary Screen** in V1. Focus Lift will never display fabricated or estimated behavioral statistics.
 
 ---
 
 ## Recommended Product Behavior
 
-| Focus Mode | Android Implementation | iOS Implementation |
-| :--- | :--- | :--- |
-| **FOCUS** | High-priority active workout notification + optional overlay reminder for non-whitelisted apps. Calls, emergency, and music permitted. | Strict `ManagedSettingsStore` shield on user's distracting apps & social categories. Music and calls unshielded. |
-| **BALANCED** | Reminder notifications for heavy social/video apps; communication apps excluded. | `ManagedSettingsStore` shields algorithmic feeds; messaging and music unshielded. |
-| **CUSTOM** | User configures specific apps to monitor. | User opens `FamilyActivityPicker` to choose specific tokens. |
+### iOS
+- **FOCUS MODE:** Restricts selected distracting apps and entertainment categories via `ManagedSettingsStore`. Music streaming apps and phone calls remain accessible.
+- **BALANCED MODE:** Restricts social/video categories; messaging tools and music remain unshielded.
+- **CUSTOM MODE:** The user opens `FamilyActivityPicker` to select specific app and category tokens.
+
+### Android
+- **FOCUS MODE:** Focus Lift monitors foreground app usage (if Usage Access is granted) and presents an actionable high-priority focus reminder notification. Permitted music and dialer apps are ignored.
+- **BALANCED MODE:** Monitors only selected entertainment packages; communication tools are excluded.
+- **CUSTOM MODE:** The user selects apps from a list of installed launcher applications.
 
 ---
 
-## V1/V2 Launch & Platform Strategy
+## V1 Launch Recommendation
 
-1. **Dual-Platform Architecture:**
-   - Both Android and iOS will share a unified `FocusControlService` Flutter interface.
-   - iOS implements full native **Screen Time / ManagedSettings** shielding.
-   - Android implements a **Compliant Focus Assistant** (Notification + Optional Non-Intrusive Overlay + UsageStats monitoring), avoiding any dangerous AccessibilityService exploits that would risk account termination.
-2. **Honest Platform Transparency:**
-   - Settings will clearly explain platform differences to the user: iOS uses Apple Screen Time shields; Android uses Focus Nudges & Overlays.
+1. **Dual-Platform Architecture with Platform-Tailored Focus Controls:**
+   - Both platforms share the same clean Flutter UI and timer engine.
+   - iOS implements native **Screen Time shielding** (`ManagedSettingsStore`).
+   - Android implements a **Compliant Distraction Reminder Model** (`UsageStatsManager` + high-priority notification), avoiding dangerous AccessibilityService exploits.
+2. **Transparent User Communication:**
+   - Focus Lift will clearly explain its capabilities on each platform so users understand what the OS natively supports.
 
 ---
 
 ## Implementation Plan for Phase 5
 
-1. **Native MethodChannel Interface (`FocusControlService` in Dart):**
-   - `requestAuthorization()`
-   - `getAuthorizationStatus()`
-   - `selectApps()`
-   - `startFocusSession()`
-   - `stopFocusSession()`
-   - `restoreNormalAccess()`
-2. **iOS Native Implementation:**
-   - Implement `FocusControlPlugin.swift` using `FamilyControls`, `FamilyActivityPicker`, and `ManagedSettingsStore`.
-   - Setup App Groups and Xcode configuration for Family Controls entitlement.
-3. **Android Native Implementation:**
-   - Implement `FocusControlPlugin.kt` handling `UsageStatsManager` deep linking and safe, non-intrusive workout reminder notifications/overlays.
-4. **Safety & Fail-Safe Cleanup:**
-   - Ensure app termination, reboot, or workout completion unconditionally clears any active shields or overlays.
+1. **Dart Abstraction (`FocusControlService`):**
+   - Define clean interface methods: `requestAuthorization()`, `getAuthorizationStatus()`, `selectApps()`, `startFocusSession()`, `stopFocusSession()`, `restoreNormalAccess()`.
+2. **iOS Native Bridge:**
+   - Implement `FocusControlPlugin.swift` wrapping `FamilyControls`, `FamilyActivityPicker`, and `ManagedSettingsStore`.
+3. **Android Native Bridge:**
+   - Implement `FocusControlPlugin.kt` wrapping `Settings.ACTION_USAGE_ACCESS_SETTINGS` intent handling, launcher app discovery, and workout reminder notifications.
+4. **Fail-Safe Cleanup:**
+   - Ensure `restoreNormalAccess()` is called on workout finish, cancel, discard, and app reboot to guarantee the user is never locked out.
