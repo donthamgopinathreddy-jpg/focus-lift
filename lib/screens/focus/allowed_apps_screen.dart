@@ -154,11 +154,13 @@ class _AllowedAppsScreenState extends State<AllowedAppsScreen> {
                           const SizedBox(height: 8),
                           ..._installedMusicApps.map((app) {
                             final isChosen = _allowed.selectedMusicPackage == app.packageName;
-                            return RadioListTile<String>(
+                            return ListTile(
                               contentPadding: EdgeInsets.zero,
-                              activeColor: AppTheme.primaryBlue,
-                              value: app.packageName,
-                              groupValue: _allowed.selectedMusicPackage,
+                              leading: Icon(
+                                isChosen ? Icons.radio_button_checked : Icons.radio_button_off,
+                                color: isChosen ? AppTheme.accentBlue : AppTheme.secondaryText,
+                                size: 20,
+                              ),
                               title: Text(
                                 app.appName,
                                 style: TextStyle(
@@ -167,10 +169,10 @@ class _AllowedAppsScreenState extends State<AllowedAppsScreen> {
                                   color: isChosen ? AppTheme.primaryText : AppTheme.secondaryText,
                                 ),
                               ),
-                              onChanged: (pkg) {
+                              onTap: () {
                                 _updateAllowed(
                                   _allowed.copyWith(
-                                    selectedMusicPackage: pkg,
+                                    selectedMusicPackage: app.packageName,
                                     selectedMusicAppName: app.appName,
                                   ),
                                 );

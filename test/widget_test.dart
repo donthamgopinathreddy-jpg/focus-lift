@@ -2,24 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:focus_lift/app/app.dart';
 import 'package:focus_lift/models/allowed_workout_apps.dart';
 import 'package:focus_lift/models/app_preferences.dart';
 import 'package:focus_lift/models/workout_session.dart';
-import 'package:focus_lift/models/workout_state.dart';
 import 'package:focus_lift/screens/focus/allowed_apps_screen.dart';
 import 'package:focus_lift/screens/home/home_screen.dart';
 import 'package:focus_lift/screens/settings/settings_screen.dart';
-import 'package:focus_lift/screens/summary/workout_summary_screen.dart';
 import 'package:focus_lift/screens/workout/workout_screen.dart';
-import 'package:focus_lift/services/alert_service.dart';
-import 'package:focus_lift/services/focus_control/app_info.dart';
-import 'package:focus_lift/services/focus_control/focus_authorization_status.dart';
-import 'package:focus_lift/services/focus_control/focus_control_result.dart';
 import 'package:focus_lift/services/focus_control/focus_control_service.dart';
 import 'package:focus_lift/services/local_storage_service.dart';
 import 'package:focus_lift/services/notification_service.dart';
-import 'package:focus_lift/services/wakelock_service.dart';
 import 'package:focus_lift/services/workout_session_service.dart';
 
 void main() {
