@@ -52,6 +52,17 @@ class MainActivity : FlutterActivity() {
                             result.success(false)
                         }
                     }
+                    "launchCameraApp" -> {
+                        try {
+                            val cameraIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                            }
+                            startActivity(cameraIntent)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.success(false)
+                        }
+                    }
                     "launchMusicApp" -> {
                         val pkg = call.argument<String?>("packageName")
                         var launched = false

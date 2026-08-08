@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 import '../../app/theme.dart';
-import '../../models/allowed_workout_apps.dart';
 import '../../models/app_preferences.dart';
 import '../../models/workout_session.dart';
 import '../../services/focus_control/focus_control_service.dart';
 import '../../services/local_storage_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/workout_session_service.dart';
-import '../focus/allowed_apps_screen.dart';
 import '../settings/settings_screen.dart';
 import '../workout/workout_screen.dart';
 
@@ -34,8 +32,8 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late AppPreferences _preferences;
   late int _selectedRestDuration;
-  late AllowedWorkoutApps _allowedApps;
   WorkoutSession? _unresolvedSession;
+  bool _isLaunching = false;
 
   final List<int> _quickRestOptions = const [30, 60, 90, 120];
 
@@ -44,7 +42,6 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _preferences = widget.initialPreferences;
     _selectedRestDuration = _preferences.defaultRestDurationSeconds;
-    _allowedApps = _preferences.allowedApps;
     _checkForActiveSession();
   }
 
@@ -64,8 +61,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showCustomRestDialog() {
-    int tempValue = _selectedRestDuration;
-    final controller = TextEditingController(text: tempValue.toString());
+    final controller = TextEditingController(text: _selectedRestDuration.toString());
 
     showDialog<int>(
       context: context,
@@ -127,24 +123,6 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  void _openManageAllowedApps() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (ctx) => AllowedAppsScreen(
-          storageService: widget.storageService,
-          focusService: widget.focusService,
-          initialAllowed: _allowedApps,
-          onAllowedChanged: (updated) {
-            setState(() {
-              _allowedApps = updated;
-              _preferences = _preferences.copyWith(allowedApps: updated);
-            });
-          },
-        ),
-      ),
-    );
-  }
-
   void _openSettings() {
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -156,7 +134,6 @@ class _HomeScreenState extends State<HomeScreen> {
             setState(() {
               _preferences = updated;
               _selectedRestDuration = updated.defaultRestDurationSeconds;
-              _allowedApps = updated.allowedApps;
             });
           },
         ),
@@ -165,6 +142,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _startWorkout({WorkoutSession? existingSession}) {
+    if (_isLaunching) return;
+    setState(() {
+      _isLaunching = true;
+    });
+
     final session = existingSession ??
         WorkoutSession.start(
           selectedRestDuration: _selectedRestDuration,
@@ -174,6 +156,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     setState(() {
       _unresolvedSession = null;
+      _isLaunching = false;
     });
 
     Navigator.of(context).push(
@@ -215,7 +198,7 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Header Brand Row
+              // TOP: Brand Header & Settings Icon
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -250,20 +233,20 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
 
               // Unfinished Session Recovery Banner
               if (_unresolvedSession != null) ...[
                 Container(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
                     color: AppTheme.surfaceElevated,
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: AppTheme.accentBlue.withAlpha(100)),
+                    border: Border.all(color: AppTheme.accentBlue.withAlpha(120)),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.fitness_center_rounded, color: AppTheme.accentBlue, size: 24),
+                      const Icon(Icons.fitness_center_rounded, color: AppTheme.accentBlue, size: 22),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
@@ -272,12 +255,11 @@ class _HomeScreenState extends State<HomeScreen> {
                             const Text(
                               'UNFINISHED WORKOUT',
                               style: TextStyle(
-                                fontSize: 13,
+                                fontSize: 12,
                                 fontWeight: FontWeight.w900,
                                 color: AppTheme.primaryText,
                               ),
                             ),
-                            const SizedBox(height: 2),
                             Text(
                               '${_unresolvedSession!.setsCompleted} sets completed',
                               style: const TextStyle(
@@ -296,215 +278,147 @@ class _HomeScreenState extends State<HomeScreen> {
                         onPressed: () => _startWorkout(existingSession: _unresolvedSession),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.primaryBlue,
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
-                        child: const Text('RESUME', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+                        child: const Text('RESUME', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 12),
               ],
 
-              // Main Scrollable Setup
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // Section 1: REST TIMER
-                      _buildSectionTitle('REST TIMER'),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: _quickRestOptions.map((secs) {
-                          final isSelected = _selectedRestDuration == secs;
-                          return Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 4),
-                              child: _buildRestButton(
-                                label: '${secs}s',
-                                isSelected: isSelected,
-                                onTap: () => _onRestDurationSelected(secs),
-                              ),
-                            ),
-                          );
-                        }).toList(),
+              // REST TIMER Selector
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'REST',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.5,
+                      color: AppTheme.secondaryText,
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: _showCustomRestDialog,
+                    child: Text(
+                      isCustomSelected ? 'CUSTOM: ${_selectedRestDuration}s' : 'Custom',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: isCustomSelected ? AppTheme.accentBlue : AppTheme.secondaryText,
                       ),
-                      const SizedBox(height: 8),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton.icon(
-                          onPressed: _showCustomRestDialog,
-                          icon: Icon(
-                            Icons.tune,
-                            size: 14,
-                            color: isCustomSelected ? AppTheme.accentBlue : AppTheme.secondaryText,
-                          ),
-                          label: Text(
-                            isCustomSelected
-                                ? 'CUSTOM: ${_selectedRestDuration}s'
-                                : 'Custom Rest',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: isCustomSelected ? AppTheme.accentBlue : AppTheme.secondaryText,
-                            ),
-                          ),
-                        ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: _quickRestOptions.map((secs) {
+                  final isSelected = _selectedRestDuration == secs;
+                  return Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                      child: _buildRestButton(
+                        label: '${secs}s',
+                        isSelected: isSelected,
+                        onTap: () => _onRestDurationSelected(secs),
                       ),
-                      const SizedBox(height: 24),
+                    ),
+                  );
+                }).toList(),
+              ),
 
-                      // Section 2: ALLOWED DURING WORKOUT
-                      _buildSectionTitle('ALLOWED DURING WORKOUT'),
-                      const SizedBox(height: 10),
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: AppTheme.surface,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: AppTheme.border),
-                        ),
+              const Spacer(flex: 1),
+
+              // CENTER: Large Circular Blue LAUNCH Button (Dominant UI element)
+              Center(
+                child: SizedBox(
+                  width: 180,
+                  height: 180,
+                  child: Material(
+                    color: AppTheme.primaryBlue,
+                    shape: const CircleBorder(),
+                    elevation: 12,
+                    shadowColor: AppTheme.primaryBlue.withAlpha(160),
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      splashColor: AppTheme.accentBlue.withAlpha(100),
+                      onTap: () => _startWorkout(),
+                      child: Center(
                         child: Column(
-                          children: [
-                            Row(
-                              children: [
-                                const Icon(Icons.music_note_rounded, color: AppTheme.accentBlue, size: 20),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      const Text(
-                                        'Music Playback',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w800,
-                                          color: AppTheme.primaryText,
-                                        ),
-                                      ),
-                                      Text(
-                                        _allowedApps.selectedMusicAppName != null
-                                            ? _allowedApps.selectedMusicAppName!
-                                            : (_allowedApps.musicAllowed ? 'Audio enabled' : 'Disabled'),
-                                        style: const TextStyle(fontSize: 11, color: AppTheme.secondaryText),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: _allowedApps.musicAllowed ? AppTheme.primaryBlue.withAlpha(30) : AppTheme.surfaceElevated,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Text(
-                                    _allowedApps.musicAllowed ? 'ENABLED' : 'OFF',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w900,
-                                      color: _allowedApps.musicAllowed ? AppTheme.accentBlue : AppTheme.secondaryText,
-                                    ),
-                                  ),
-                                ),
-                              ],
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: const [
+                            Icon(
+                              Icons.lock_outline_rounded,
+                              size: 40,
+                              color: Colors.white,
                             ),
-                            const Divider(height: 24, color: AppTheme.border),
-                            Row(
-                              children: [
-                                const Icon(Icons.phone_in_talk_rounded, color: AppTheme.accentBlue, size: 20),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: const [
-                                      Text(
-                                        'Phone & Calls',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w800,
-                                          color: AppTheme.primaryText,
-                                        ),
-                                      ),
-                                      Text(
-                                        'Always available for essential use',
-                                        style: TextStyle(fontSize: 11, color: AppTheme.secondaryText),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.surfaceElevated,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: const Text(
-                                    'ALWAYS ON',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w900,
-                                      color: AppTheme.secondaryText,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: TextButton.icon(
-                                onPressed: _openManageAllowedApps,
-                                icon: const Icon(Icons.tune, size: 14, color: AppTheme.secondaryText),
-                                label: const Text(
-                                  'Manage Allowed Apps',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w800,
-                                    color: AppTheme.secondaryText,
-                                  ),
-                                ),
+                            SizedBox(height: 6),
+                            Text(
+                              'LAUNCH',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 2.0,
+                                color: Colors.white,
                               ),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 28),
-                    ],
+                    ),
                   ),
                 ),
               ),
 
-              // Section 3: Dominant Primary CTA — START FOCUS WORKOUT
-              ElevatedButton(
-                onPressed: () => _startWorkout(),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primaryBlue,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(double.infinity, 64),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  elevation: 4,
-                  shadowColor: AppTheme.primaryBlue.withAlpha(100),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: const [
-                    Icon(Icons.flash_on_rounded, size: 24),
-                    SizedBox(width: 10),
-                    Text(
-                      'START FOCUS WORKOUT',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.5,
-                      ),
+              const Spacer(flex: 1),
+
+              // BELOW LAUNCH BUTTON: Available during workout section
+              Column(
+                children: [
+                  const Text(
+                    'AVAILABLE DURING WORKOUT',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.2,
+                      color: AppTheme.secondaryText,
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _buildAvailableTool(
+                        icon: Icons.music_note_rounded,
+                        label: 'MUSIC',
+                      ),
+                      _buildAvailableTool(
+                        icon: Icons.phone_in_talk_rounded,
+                        label: 'CALLS',
+                      ),
+                      _buildAvailableTool(
+                        icon: Icons.camera_alt_outlined,
+                        label: 'CAMERA',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Emergency calling remains available.',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.secondaryText,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
             ],
           ),
         ),
@@ -512,15 +426,30 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildSectionTitle(String title) {
-    return Text(
-      title,
-      style: const TextStyle(
-        fontSize: 11,
-        fontWeight: FontWeight.w900,
-        letterSpacing: 1.5,
-        color: AppTheme.secondaryText,
-      ),
+  Widget _buildAvailableTool({required IconData icon, required String label}) {
+    return Column(
+      children: [
+        Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: AppTheme.surface,
+            shape: BoxShape.circle,
+            border: Border.all(color: AppTheme.border),
+          ),
+          child: Icon(icon, color: AppTheme.accentBlue, size: 20),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.0,
+            color: AppTheme.primaryText,
+          ),
+        ),
+      ],
     );
   }
 
@@ -531,15 +460,15 @@ class _HomeScreenState extends State<HomeScreen> {
   }) {
     return Material(
       color: isSelected ? AppTheme.surfaceElevated : AppTheme.surface,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(10),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         child: Container(
-          height: 48,
+          height: 40,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(10),
             border: Border.all(
               color: isSelected ? AppTheme.accentBlue : AppTheme.border,
               width: isSelected ? 2 : 1,
@@ -548,7 +477,7 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Text(
             label,
             style: TextStyle(
-              fontSize: 14,
+              fontSize: 13,
               fontWeight: FontWeight.w800,
               color: isSelected ? AppTheme.accentBlue : AppTheme.primaryText,
             ),

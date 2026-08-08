@@ -88,6 +88,16 @@ class FocusControlService {
     }
   }
 
+  /// Opens the standard system camera for recording sets or taking form photos.
+  Future<bool> launchCameraApp() async {
+    try {
+      final bool? launched = await _channel.invokeMethod<bool>('launchCameraApp');
+      return launched ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Discovers installed music and audio streaming applications on the device.
   Future<List<AppInfo>> discoverInstalledMusicApps() async {
     try {

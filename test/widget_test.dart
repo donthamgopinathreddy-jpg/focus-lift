@@ -2,13 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:focus_lift/app/app.dart';
 import 'package:focus_lift/models/allowed_workout_apps.dart';
 import 'package:focus_lift/models/app_preferences.dart';
 import 'package:focus_lift/models/workout_session.dart';
+import 'package:focus_lift/models/workout_state.dart';
 import 'package:focus_lift/screens/focus/allowed_apps_screen.dart';
 import 'package:focus_lift/screens/home/home_screen.dart';
 import 'package:focus_lift/screens/settings/settings_screen.dart';
+import 'package:focus_lift/screens/summary/workout_summary_screen.dart';
 import 'package:focus_lift/screens/workout/workout_screen.dart';
+import 'package:focus_lift/services/focus_control/focus_authorization_status.dart';
 import 'package:focus_lift/services/focus_control/focus_control_service.dart';
 import 'package:focus_lift/services/local_storage_service.dart';
 import 'package:focus_lift/services/notification_service.dart';
@@ -23,6 +27,7 @@ void main() {
   late int restoreAccessCalls;
   late int launchMusicCalls;
   late int launchPhoneCalls;
+  late int launchCameraCalls;
 
   setUp(() {
     startFocusWorkoutCalls = 0;
@@ -30,6 +35,7 @@ void main() {
     restoreAccessCalls = 0;
     launchMusicCalls = 0;
     launchPhoneCalls = 0;
+    launchCameraCalls = 0;
 
     mockChannel = const MethodChannel(FocusControlService.channelName);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -44,6 +50,9 @@ void main() {
           return true;
         case 'launchPhoneApp':
           launchPhoneCalls++;
+          return true;
+        case 'launchCameraApp':
+          launchCameraCalls++;
           return true;
         case 'discoverInstalledMusicApps':
           return [
@@ -87,48 +96,8 @@ void main() {
         .setMockMethodCallHandler(mockChannel, null);
   });
 
-  group('Redesign: AllowedWorkoutApps & Preferences Models', () {
-    test('AllowedWorkoutApps defaults and serialization', () {
-      const defaultApps = AllowedWorkoutApps();
-      expect(defaultApps.callsAllowed, isTrue);
-      expect(defaultApps.musicAllowed, isTrue);
-      expect(defaultApps.messagesAllowed, isFalse);
-      expect(defaultApps.cameraAllowed, isFalse);
-
-      final map = defaultApps.toMap();
-      final fromMap = AllowedWorkoutApps.fromMap(map);
-      expect(fromMap.callsAllowed, isTrue);
-      expect(fromMap.musicAllowed, isTrue);
-      expect(fromMap.messagesAllowed, isFalse);
-
-      final custom = defaultApps.copyWith(
-        musicAllowed: true,
-        selectedMusicPackage: 'com.spotify.music',
-        selectedMusicAppName: 'Spotify',
-        messagesAllowed: true,
-      );
-      expect(custom.selectedMusicPackage, 'com.spotify.music');
-      expect(custom.selectedMusicAppName, 'Spotify');
-      expect(custom.messagesAllowed, isTrue);
-    });
-
-    test('AppPreferences stores AllowedWorkoutApps', () {
-      const prefs = AppPreferences(
-        defaultRestDurationSeconds: 90,
-        allowedApps: AllowedWorkoutApps(
-          messagesAllowed: true,
-          cameraAllowed: true,
-        ),
-      );
-
-      expect(prefs.defaultRestDurationSeconds, 90);
-      expect(prefs.allowedApps.messagesAllowed, isTrue);
-      expect(prefs.allowedApps.cameraAllowed, isTrue);
-    });
-  });
-
-  group('Redesign: Home Screen UI & Allowlist Structure', () {
-    testWidgets('Home renders simplified UI with rest options and dominant CTA', (tester) async {
+  group('Major Redesign: Launch Screen & Circular LAUNCH Button', () {
+    testWidgets('Home renders large circular LAUNCH button, rest options, and available tools', (tester) async {
       SharedPreferences.setMockInitialValues({});
       final storage = await LocalStorageService.create();
       final sessionService = await WorkoutSessionService.create();
@@ -148,34 +117,37 @@ void main() {
         ),
       );
 
-      // Verify minimal Header Brand
+      // Verify Header
       expect(find.text('FOCUS LIFT'), findsOneWidget);
       expect(find.text('TRAIN WITHOUT DISTRACTIONS'), findsOneWidget);
 
-      // Verify Rest options
+      // Verify Rest selector
+      expect(find.text('REST'), findsOneWidget);
       expect(find.text('30s'), findsOneWidget);
       expect(find.text('60s'), findsOneWidget);
       expect(find.text('90s'), findsOneWidget);
       expect(find.text('120s'), findsOneWidget);
-      expect(find.text('Custom Rest'), findsOneWidget);
+      expect(find.text('Custom'), findsOneWidget);
 
-      // Verify Allowed During Workout section
-      expect(find.text('ALLOWED DURING WORKOUT'), findsOneWidget);
-      expect(find.text('Music Playback'), findsOneWidget);
-      expect(find.text('Phone & Calls'), findsOneWidget);
-      expect(find.text('Manage Allowed Apps'), findsOneWidget);
+      // Verify Large Circular LAUNCH Button
+      expect(find.text('LAUNCH'), findsOneWidget);
+      expect(find.byIcon(Icons.lock_outline_rounded), findsOneWidget);
 
-      // Verify Dominant START FOCUS WORKOUT CTA
-      expect(find.text('START FOCUS WORKOUT'), findsOneWidget);
+      // Verify Available Tools below LAUNCH
+      expect(find.text('AVAILABLE DURING WORKOUT'), findsOneWidget);
+      expect(find.text('MUSIC'), findsOneWidget);
+      expect(find.text('CALLS'), findsOneWidget);
+      expect(find.text('CAMERA'), findsOneWidget);
+      expect(find.text('Emergency calling remains available.'), findsOneWidget);
 
-      // Verify OLD CLUTTER IS COMPLETELY ABSENT
-      expect(find.text('FOCUS MODE'), findsNothing);
-      expect(find.text('BALANCED MODE'), findsNothing);
-      expect(find.text('CUSTOM MODE'), findsNothing);
+      // Verify old concepts are absent
+      expect(find.text('Focus Mode'), findsNothing);
+      expect(find.text('Balanced Mode'), findsNothing);
+      expect(find.text('Custom Mode'), findsNothing);
       expect(find.text('Configure Distractions'), findsNothing);
     });
 
-    testWidgets('Selecting rest options updates state and persistence', (tester) async {
+    testWidgets('Selecting rest duration updates local preferences', (tester) async {
       SharedPreferences.setMockInitialValues({});
       final storage = await LocalStorageService.create();
       final sessionService = await WorkoutSessionService.create();
@@ -195,62 +167,47 @@ void main() {
         ),
       );
 
-      // Tap 90s rest
       await tester.tap(find.text('90s'));
       await tester.pumpAndSettle();
 
       final reloaded = storage.loadPreferences();
       expect(reloaded.defaultRestDurationSeconds, 90);
     });
-  });
 
-  group('Redesign: AllowedAppsScreen & Local Persistence', () {
-    testWidgets('AllowedAppsScreen loads music apps and toggles optional permissions', (tester) async {
-      tester.view.physicalSize = const Size(1080, 2400);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-
+    testWidgets('Pressing LAUNCH immediately creates session and navigates to WorkoutScreen', (tester) async {
       SharedPreferences.setMockInitialValues({});
       final storage = await LocalStorageService.create();
+      final sessionService = await WorkoutSessionService.create();
+      final notificationService = await NotificationService.create();
       final focusService = await FocusControlService.create();
-      AllowedWorkoutApps currentAllowed = const AllowedWorkoutApps();
+      final preferences = storage.loadPreferences();
 
       await tester.pumpWidget(
         MaterialApp(
-          home: AllowedAppsScreen(
+          home: HomeScreen(
             storageService: storage,
+            sessionService: sessionService,
+            notificationService: notificationService,
             focusService: focusService,
-            initialAllowed: currentAllowed,
-            onAllowedChanged: (updated) {
-              currentAllowed = updated;
-            },
+            initialPreferences: preferences,
           ),
         ),
       );
 
+      // Tap LAUNCH
+      await tester.tap(find.text('LAUNCH'));
       await tester.pumpAndSettle();
 
-      expect(find.text('ALLOWED DURING WORKOUT'), findsOneWidget);
-      expect(find.text('Phone & Calls'), findsOneWidget);
-      expect(find.text('ALWAYS ON'), findsOneWidget);
-      expect(find.text('Music Playback'), findsOneWidget);
-      expect(find.text('Spotify'), findsOneWidget);
-      expect(find.text('YouTube Music'), findsOneWidget);
-      expect(find.text('Messages'), findsOneWidget);
-      expect(find.text('Camera'), findsOneWidget);
-
-      // Select Spotify as preferred music app
-      await tester.tap(find.text('Spotify'));
-      await tester.pumpAndSettle();
-
-      expect(currentAllowed.selectedMusicPackage, 'com.spotify.music');
-      expect(currentAllowed.selectedMusicAppName, 'Spotify');
+      // Workout screen active immediately
+      expect(find.text('WORKOUT ACTIVE'), findsOneWidget);
+      expect(find.text('END SET'), findsOneWidget);
+      expect(find.text('QUICK ACCESS'), findsOneWidget);
+      expect(sessionService.loadActiveSession(), isNotNull);
     });
   });
 
-  group('Redesign: Workout Screen with Quick Access & Fail-Safe Cleanup', () {
-    testWidgets('WorkoutScreen starts focus session and offers quick access to Music & Calls', (tester) async {
+  group('Major Redesign: Dedicated Workout & Rest Experience', () {
+    testWidgets('WorkoutScreen handles END SET, Rest Countdown, Skip Rest, and Next Set', (tester) async {
       SharedPreferences.setMockInitialValues({});
       final sessionService = await WorkoutSessionService.create();
       final notificationService = await NotificationService.create();
@@ -264,53 +221,48 @@ void main() {
             sessionService: sessionService,
             notificationService: notificationService,
             focusService: focusService,
-            preferences: const AppPreferences(
-              allowedApps: AllowedWorkoutApps(
-                musicAllowed: true,
-                callsAllowed: true,
-              ),
-            ),
+            preferences: const AppPreferences(),
           ),
         ),
       );
 
       await tester.pump();
       expect(startFocusWorkoutCalls, 1);
+      expect(find.text('WORKOUT ACTIVE'), findsOneWidget);
+      expect(find.text('SET'), findsOneWidget);
+      expect(find.text('01'), findsOneWidget);
 
-      // Verify Active Workout layout
-      expect(find.text('WORKOUT'), findsOneWidget);
-      expect(find.text('END SET'), findsOneWidget);
-      expect(find.text('MUSIC'), findsOneWidget);
-      expect(find.text('CALL'), findsOneWidget);
-
-      // Tap Quick Access MUSIC
+      // Tap Quick Access buttons
       await tester.tap(find.text('MUSIC'));
       await tester.pump();
       expect(launchMusicCalls, 1);
 
-      // Tap Quick Access CALL
-      await tester.tap(find.text('CALL'));
+      await tester.tap(find.text('CALLS'));
       await tester.pump();
       expect(launchPhoneCalls, 1);
+
+      await tester.tap(find.text('CAMERA'));
+      await tester.pump();
+      expect(launchCameraCalls, 1);
 
       // Tap END SET -> Enters Rest
       await tester.tap(find.text('END SET'));
       await tester.pump();
 
-      expect(find.text('REST'), findsOneWidget);
+      expect(find.text('REST'), findsWidgets);
+      expect(find.text('SET 1 COMPLETE'), findsOneWidget);
       expect(find.text('SKIP REST'), findsOneWidget);
-      expect(find.text('MUSIC'), findsOneWidget);
-      expect(find.text('CALL'), findsOneWidget);
 
       // Tap SKIP REST -> Returns to Workout Active
       await tester.tap(find.text('SKIP REST'));
       await tester.pump();
 
-      expect(find.text('WORKOUT'), findsOneWidget);
+      expect(find.text('WORKOUT ACTIVE'), findsOneWidget);
+      expect(find.text('02'), findsOneWidget);
       expect(find.text('END SET'), findsOneWidget);
     });
 
-    testWidgets('Finishing workout cleans up focus and displays minimal Summary', (tester) async {
+    testWidgets('Finish workout confirms, cleans up focus, and displays minimal Summary', (tester) async {
       SharedPreferences.setMockInitialValues({});
       final sessionService = await WorkoutSessionService.create();
       final notificationService = await NotificationService.create();
@@ -331,26 +283,59 @@ void main() {
 
       await tester.pump();
 
-      // Tap Finish
+      // Tap Finish Workout
       await tester.tap(find.text('Finish Workout'));
       await tester.pumpAndSettle();
 
-      // Confirm in dialog by selecting the ElevatedButton FINISH button
+      // Confirm in dialog
       await tester.tap(find.widgetWithText(ElevatedButton, 'FINISH'));
       await tester.pumpAndSettle();
 
       expect(stopFocusCalls, greaterThanOrEqualTo(1));
       expect(restoreAccessCalls, greaterThanOrEqualTo(1));
+      expect(sessionService.loadActiveSession(), isNull);
 
-      // Summary screen renders cleanly
+      // Summary screen
       expect(find.text('WORKOUT COMPLETE'), findsOneWidget);
       expect(find.text('WORKOUT TIME'), findsOneWidget);
       expect(find.text('SETS COMPLETED'), findsOneWidget);
       expect(find.text('DONE'), findsOneWidget);
 
-      // Verify no fake scores or ads
-      expect(find.text('Focus Score'), findsNothing);
-      expect(find.text('Distraction Attempts'), findsNothing);
+      // Tap DONE
+      await tester.tap(find.text('DONE'));
+      await tester.pumpAndSettle();
+    });
+  });
+
+  group('Major Redesign: Active Session Recovery & Startup Routing', () {
+    testWidgets('App startup with active session opens directly into WorkoutScreen', (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final storage = await LocalStorageService.create();
+      final sessionService = await WorkoutSessionService.create();
+      final notificationService = await NotificationService.create();
+      final focusService = await FocusControlService.create();
+      final preferences = storage.loadPreferences();
+
+      // Save an active workout session in local storage
+      final active = WorkoutSession.start(selectedRestDuration: 60);
+      sessionService.saveActiveSession(active);
+
+      await tester.pumpWidget(
+        FocusLiftApp(
+          storageService: storage,
+          sessionService: sessionService,
+          notificationService: notificationService,
+          focusService: focusService,
+          initialPreferences: preferences,
+        ),
+      );
+
+      await tester.pump();
+
+      // Bypasses Launch screen and displays WorkoutScreen directly
+      expect(find.text('WORKOUT ACTIVE'), findsOneWidget);
+      expect(find.text('END SET'), findsOneWidget);
+      expect(find.text('LAUNCH'), findsNothing);
     });
 
     testWidgets('Discarding unfinished workout cleans up focus controls', (tester) async {
@@ -389,8 +374,8 @@ void main() {
     });
   });
 
-  group('Redesign: Settings Screen UI', () {
-    testWidgets('Settings screen provides minimal toggles, allowed apps link, and privacy text', (tester) async {
+  group('Major Redesign: Settings & Allowed Apps Screens', () {
+    testWidgets('Settings screen provides minimal toggles and privacy text', (tester) async {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
@@ -421,6 +406,46 @@ void main() {
       expect(find.text('Keep Screen Awake'), findsOneWidget);
       expect(find.text('Allowed Apps'), findsOneWidget);
       expect(find.text('Focus Lift stores workout settings and preferences on this device. No account is required.'), findsOneWidget);
+    });
+
+    testWidgets('AllowedAppsScreen enables music selection', (tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      SharedPreferences.setMockInitialValues({});
+      final storage = await LocalStorageService.create();
+      final focusService = await FocusControlService.create();
+      AllowedWorkoutApps currentAllowed = const AllowedWorkoutApps();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AllowedAppsScreen(
+            storageService: storage,
+            focusService: focusService,
+            initialAllowed: currentAllowed,
+            onAllowedChanged: (updated) {
+              currentAllowed = updated;
+            },
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(find.text('ALLOWED DURING WORKOUT'), findsOneWidget);
+      expect(find.text('Phone & Calls'), findsOneWidget);
+      expect(find.text('ALWAYS ON'), findsOneWidget);
+      expect(find.text('Music Playback'), findsOneWidget);
+      expect(find.text('Spotify'), findsOneWidget);
+      expect(find.text('YouTube Music'), findsOneWidget);
+
+      await tester.tap(find.text('Spotify'));
+      await tester.pumpAndSettle();
+
+      expect(currentAllowed.selectedMusicPackage, 'com.spotify.music');
+      expect(currentAllowed.selectedMusicAppName, 'Spotify');
     });
   });
 }

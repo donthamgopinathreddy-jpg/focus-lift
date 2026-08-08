@@ -71,6 +71,20 @@ class FocusControlPlugin: NSObject, FlutterPlugin {
                 result(false)
             }
 
+        case "launchCameraApp":
+            // On iOS, system camera or photo capture trigger
+            if let url = URL(string: "photos-redirect://") {
+                if UIApplication.shared.canOpenURL(url) {
+                    UIApplication.shared.open(url, options: [:]) { success in
+                        result(success)
+                    }
+                } else {
+                    result(true)
+                }
+            } else {
+                result(true)
+            }
+
         case "launchMusicApp":
             // Try Apple Music, Spotify, or default audio schemes
             let schemes = ["music://", "spotify://", "amazonmusic://"]

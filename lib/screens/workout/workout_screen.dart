@@ -49,13 +49,13 @@ class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserv
     // Request notification permission contextually
     widget.notificationService.requestPermission();
 
-    // Enable wakelock if Keep Screen Awake is preferred
+    // Enable display wakelock if preferred
     WakelockService.setAwake(_preferences.keepScreenAwake);
 
-    // Start Focus workout session with user's allowed apps configuration
+    // Activate platform focus controls
     widget.focusService.startFocusWorkout(_preferences.allowedApps);
 
-    // Schedule notification if starting in resting state
+    // Schedule background notification if starting in resting state
     if (_session.currentState == WorkoutState.resting && _session.restEndsAt != null) {
       widget.notificationService.scheduleRestNotification(
         restEndsAt: _session.restEndsAt!,
@@ -188,6 +188,10 @@ class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserv
     await widget.focusService.launchPhoneApp();
   }
 
+  Future<void> _onQuickCamera() async {
+    await widget.focusService.launchCameraApp();
+  }
+
   void _confirmFinishWorkout() {
     showDialog<bool>(
       context: context,
@@ -195,8 +199,8 @@ class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserv
         return AlertDialog(
           title: const Text('FINISH WORKOUT?'),
           content: const Text(
-            'Your current workout will end.',
-            style: TextStyle(color: AppTheme.secondaryText, fontSize: 14),
+            'Your workout session will complete and focus controls will be released.',
+            style: TextStyle(color: AppTheme.secondaryText, fontSize: 13),
           ),
           actions: [
             TextButton(
@@ -270,7 +274,7 @@ class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserv
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Top Navigation Bar
+                // Top Header
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -280,7 +284,7 @@ class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserv
                         const Text(
                           'FOCUS LIFT',
                           style: TextStyle(
-                            fontSize: 14,
+                            fontSize: 13,
                             fontWeight: FontWeight.w900,
                             letterSpacing: 1.2,
                             color: AppTheme.secondaryText,
@@ -288,35 +292,27 @@ class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserv
                         ),
                         Text(
                           _session.currentState == WorkoutState.active
-                              ? 'WORKOUT'
-                              : 'REST MODE',
+                              ? 'WORKOUT ACTIVE'
+                              : 'REST',
                           style: const TextStyle(
                             fontSize: 18,
-                            fontWeight: FontWeight.w800,
+                            fontWeight: FontWeight.w900,
                             letterSpacing: 0.8,
                             color: AppTheme.primaryText,
                           ),
                         ),
                       ],
                     ),
-                    TextButton.icon(
+                    IconButton(
                       onPressed: _confirmFinishWorkout,
-                      icon: const Icon(Icons.stop_circle_outlined, size: 18, color: AppTheme.secondaryText),
-                      label: const Text(
-                        'FINISH',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.8,
-                          color: AppTheme.secondaryText,
-                        ),
-                      ),
+                      icon: const Icon(Icons.stop_circle_outlined, color: AppTheme.secondaryText),
+                      tooltip: 'Finish Workout',
                     ),
                   ],
                 ),
                 const SizedBox(height: 16),
 
-                // Main Workout Content by State
+                // Main Workout / Rest Interface
                 Expanded(
                   child: _session.currentState == WorkoutState.active
                       ? _buildActiveWorkoutView(elapsed)
@@ -331,23 +327,15 @@ class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserv
   }
 
   Widget _buildActiveWorkoutView(Duration elapsed) {
+    final setNumber = (_session.setsCompleted + 1).toString().padLeft(2, '0');
+
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         const Spacer(flex: 1),
 
-        // Workout Elapsed Timer
-        const Text(
-          'ELAPSED TIME',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 1.5,
-            color: AppTheme.secondaryText,
-          ),
-        ),
-        const SizedBox(height: 8),
+        // Large Elapsed Workout Timer
         FittedBox(
           fit: BoxFit.scaleDown,
           child: Text(
@@ -361,54 +349,35 @@ class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserv
             ),
           ),
         ),
-        const SizedBox(height: 28),
+        const SizedBox(height: 20),
 
-        // Sets Count Badge
-        Container(
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
-          decoration: BoxDecoration(
-            color: AppTheme.surface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppTheme.border),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'SET ',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.0,
-                  color: AppTheme.secondaryText,
-                ),
+        // Set Counter Display
+        Column(
+          children: [
+            const Text(
+              'SET',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 2.0,
+                color: AppTheme.secondaryText,
               ),
-              Text(
-                '${_session.setsCompleted + 1}',
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
-                  color: AppTheme.accentBlue,
-                ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              setNumber,
+              style: const TextStyle(
+                fontSize: 36,
+                fontWeight: FontWeight.w900,
+                color: AppTheme.accentBlue,
               ),
-              const SizedBox(width: 14),
-              Container(width: 1, height: 20, color: AppTheme.border),
-              const SizedBox(width: 14),
-              Text(
-                '${_session.setsCompleted} COMPLETED',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: AppTheme.secondaryText,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
 
         const Spacer(flex: 2),
 
-        // Dominant Primary Action: END SET
+        // Dominant Action Button: END SET
         ElevatedButton(
           onPressed: _onEndSet,
           style: ElevatedButton.styleFrom(
@@ -421,42 +390,35 @@ class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserv
             elevation: 4,
             shadowColor: AppTheme.primaryBlue.withAlpha(120),
           ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: const [
-              Icon(Icons.check_circle_outline, size: 28),
-              SizedBox(width: 10),
-              Text(
-                'END SET',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.5,
-                ),
-              ),
-            ],
+          child: const Text(
+            'END SET',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.5,
+            ),
           ),
         ),
+        const SizedBox(height: 20),
+
+        // Quick Access Row: [ MUSIC ] [ CALLS ] [ CAMERA ]
+        _buildQuickAccessSection(),
+
         const SizedBox(height: 14),
 
-        // Quick Access Controls: MUSIC & CALL
-        _buildQuickAccessRow(),
-
-        const SizedBox(height: 12),
-
-        // Visually Secondary Action: Finish Workout
+        // Secondary Finish Action
         TextButton(
           onPressed: _confirmFinishWorkout,
           child: const Text(
             'Finish Workout',
             style: TextStyle(
-              fontSize: 14,
+              fontSize: 13,
               fontWeight: FontWeight.w700,
               color: AppTheme.secondaryText,
             ),
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 4),
       ],
     );
   }
@@ -471,44 +433,25 @@ class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserv
       children: [
         // Subtle Workout Elapsed Tracker
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
           decoration: BoxDecoration(
             color: AppTheme.surfaceElevated,
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(16),
             border: Border.all(color: AppTheme.border),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.timer_outlined, size: 14, color: AppTheme.secondaryText),
-              const SizedBox(width: 6),
-              Text(
-                'WORKOUT: ${_formatElapsedTime(elapsed)}',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.8,
-                  color: AppTheme.secondaryText,
-                ),
-              ),
-            ],
+          child: Text(
+            'WORKOUT: ${_formatElapsedTime(elapsed)}',
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.8,
+              color: AppTheme.secondaryText,
+            ),
           ),
         ),
         const Spacer(flex: 1),
 
-        // Rest Status Title
-        Text(
-          isRestComplete ? 'REST COMPLETE' : 'REST',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 2.0,
-            color: isRestComplete ? AppTheme.successGreen : AppTheme.accentBlue,
-          ),
-        ),
-        const SizedBox(height: 12),
-
-        // Large Rest Countdown
+        // Rest Countdown Timer
         FittedBox(
           fit: BoxFit.scaleDown,
           child: Text(
@@ -522,16 +465,18 @@ class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserv
             ),
           ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 12),
 
         // Rest Set Indicator
         Text(
-          'SET ${_session.setsCompleted} COMPLETE',
-          style: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 1.0,
-            color: AppTheme.secondaryText,
+          isRestComplete
+              ? 'REST COMPLETE'
+              : 'SET ${_session.setsCompleted} COMPLETE',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.2,
+            color: isRestComplete ? AppTheme.successGreen : AppTheme.secondaryText,
           ),
         ),
 
@@ -550,20 +495,13 @@ class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserv
               ),
               elevation: 4,
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: const [
-                Icon(Icons.play_arrow_rounded, size: 30),
-                SizedBox(width: 8),
-                Text(
-                  'START NEXT SET',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-              ],
+            child: const Text(
+              'START NEXT SET',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.2,
+              ),
             ),
           )
         else
@@ -586,68 +524,96 @@ class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserv
               ),
             ),
           ),
+        const SizedBox(height: 20),
+
+        // Quick Access Row: [ MUSIC ] [ CALLS ] [ CAMERA ]
+        _buildQuickAccessSection(),
+
         const SizedBox(height: 14),
 
-        // Quick Access Controls: MUSIC & CALL
-        _buildQuickAccessRow(),
-
-        const SizedBox(height: 12),
-
-        // Visually Secondary Action: Finish Workout
+        // Secondary Finish Action
         TextButton(
           onPressed: _confirmFinishWorkout,
           child: const Text(
             'Finish Workout',
             style: TextStyle(
-              fontSize: 14,
+              fontSize: 13,
               fontWeight: FontWeight.w700,
               color: AppTheme.secondaryText,
             ),
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 4),
       ],
     );
   }
 
-  Widget _buildQuickAccessRow() {
-    return Row(
+  Widget _buildQuickAccessSection() {
+    return Column(
       children: [
-        if (_preferences.allowedApps.musicAllowed)
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: _onQuickMusic,
-              icon: const Icon(Icons.music_note_rounded, size: 18, color: AppTheme.accentBlue),
-              label: const Text(
-                'MUSIC',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 0.8),
-              ),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: AppTheme.border),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        const Text(
+          'QUICK ACCESS',
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.2,
+            color: AppTheme.secondaryText,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: _buildQuickButton(
+                icon: Icons.music_note_rounded,
+                label: 'MUSIC',
+                onTap: _onQuickMusic,
               ),
             ),
-          ),
-        if (_preferences.allowedApps.musicAllowed && _preferences.allowedApps.callsAllowed)
-          const SizedBox(width: 10),
-        if (_preferences.allowedApps.callsAllowed)
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: _onQuickCall,
-              icon: const Icon(Icons.phone_in_talk_rounded, size: 18, color: AppTheme.accentBlue),
-              label: const Text(
-                'CALL',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 0.8),
-              ),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: AppTheme.border),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _buildQuickButton(
+                icon: Icons.phone_in_talk_rounded,
+                label: 'CALLS',
+                onTap: _onQuickCall,
               ),
             ),
-          ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _buildQuickButton(
+                icon: Icons.camera_alt_outlined,
+                label: 'CAMERA',
+                onTap: _onQuickCamera,
+              ),
+            ),
+          ],
+        ),
       ],
+    );
+  }
+
+  Widget _buildQuickButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return OutlinedButton.icon(
+      onPressed: onTap,
+      icon: Icon(icon, size: 16, color: AppTheme.accentBlue),
+      label: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.8,
+          color: AppTheme.primaryText,
+        ),
+      ),
+      style: OutlinedButton.styleFrom(
+        side: const BorderSide(color: AppTheme.border),
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
     );
   }
 }
