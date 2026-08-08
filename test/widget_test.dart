@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:focus_lift/app/app.dart';
 import 'package:focus_lift/models/app_preferences.dart';
 import 'package:focus_lift/models/workout_session.dart';
-import 'package:focus_lift/models/workout_state.dart';
 import 'package:focus_lift/screens/settings/settings_screen.dart';
 import 'package:focus_lift/services/alert_service.dart';
 import 'package:focus_lift/services/local_storage_service.dart';
