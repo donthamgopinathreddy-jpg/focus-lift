@@ -5,6 +5,7 @@ import '../../models/app_preferences.dart';
 import '../../models/workout_session.dart';
 import '../../models/workout_state.dart';
 import '../../services/alert_service.dart';
+import '../../services/focus_control/focus_control_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/wakelock_service.dart';
 import '../../services/workout_session_service.dart';
@@ -14,6 +15,7 @@ class WorkoutScreen extends StatefulWidget {
   final WorkoutSession initialSession;
   final WorkoutSessionService sessionService;
   final NotificationService notificationService;
+  final FocusControlService focusService;
   final AppPreferences preferences;
 
   const WorkoutScreen({
@@ -21,6 +23,7 @@ class WorkoutScreen extends StatefulWidget {
     required this.initialSession,
     required this.sessionService,
     required this.notificationService,
+    required this.focusService,
     required this.preferences,
   });
 
@@ -48,6 +51,9 @@ class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserv
 
     // Enable wakelock if Keep Screen Awake is preferred
     WakelockService.setAwake(_preferences.keepScreenAwake);
+
+    // Start Focus session according to user's selected mode
+    widget.focusService.startFocusSession(_preferences.focusMode);
 
     // Schedule notification if starting in resting state
     if (_session.currentState == WorkoutState.resting && _session.restEndsAt != null) {
@@ -115,6 +121,8 @@ class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserv
     _ticker?.cancel();
     widget.notificationService.cancelRestNotification();
     WakelockService.release();
+    widget.focusService.stopFocusSession();
+    widget.focusService.restoreNormalAccess();
     super.dispose();
   }
 
@@ -201,6 +209,8 @@ class _WorkoutScreenState extends State<WorkoutScreen> with WidgetsBindingObserv
     _ticker?.cancel();
     widget.notificationService.cancelRestNotification();
     WakelockService.release();
+    widget.focusService.stopFocusSession();
+    widget.focusService.restoreNormalAccess();
 
     final finishedSession = _session.finishWorkout();
     widget.sessionService.clearActiveSession();

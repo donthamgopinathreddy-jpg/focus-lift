@@ -3,9 +3,11 @@ import '../../app/theme.dart';
 import '../../models/app_preferences.dart';
 import '../../models/focus_mode.dart';
 import '../../models/workout_session.dart';
+import '../../services/focus_control/focus_control_service.dart';
 import '../../services/local_storage_service.dart';
-import '../../services/workout_session_service.dart';
 import '../../services/notification_service.dart';
+import '../../services/workout_session_service.dart';
+import '../focus/distraction_picker_screen.dart';
 import '../settings/settings_screen.dart';
 import '../workout/workout_screen.dart';
 
@@ -13,6 +15,7 @@ class HomeScreen extends StatefulWidget {
   final LocalStorageService storageService;
   final WorkoutSessionService sessionService;
   final NotificationService notificationService;
+  final FocusControlService focusService;
   final AppPreferences initialPreferences;
 
   const HomeScreen({
@@ -20,6 +23,7 @@ class HomeScreen extends StatefulWidget {
     required this.storageService,
     required this.sessionService,
     required this.notificationService,
+    required this.focusService,
     required this.initialPreferences,
   });
 
@@ -157,6 +161,16 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _openDistractionPicker() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (ctx) => DistractionPickerScreen(
+          focusService: widget.focusService,
+        ),
+      ),
+    );
+  }
+
   void _startWorkout({WorkoutSession? existingSession}) {
     final session = existingSession ??
         WorkoutSession.start(
@@ -175,6 +189,7 @@ class _HomeScreenState extends State<HomeScreen> {
           initialSession: session,
           sessionService: widget.sessionService,
           notificationService: widget.notificationService,
+          focusService: widget.focusService,
           preferences: _preferences,
         ),
       ),
@@ -189,6 +204,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _discardUnfinishedSession() {
+    widget.focusService.stopFocusSession();
+    widget.focusService.restoreNormalAccess();
     widget.sessionService.clearActiveSession();
     setState(() {
       _unresolvedSession = null;
@@ -420,7 +437,29 @@ class _HomeScreenState extends State<HomeScreen> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 32),
+                      const SizedBox(height: 8),
+                      // Subtle Configure Distractions action
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: _openDistractionPicker,
+                          icon: const Icon(
+                            Icons.tune,
+                            size: 16,
+                            color: AppTheme.secondaryText,
+                          ),
+                          label: const Text(
+                            'CONFIGURE DISTRACTIONS',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.5,
+                              color: AppTheme.secondaryText,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
                     ],
                   ),
                 ),

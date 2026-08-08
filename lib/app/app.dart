@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/app_preferences.dart';
 import '../screens/home/home_screen.dart';
+import '../services/focus_control/focus_control_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/notification_service.dart';
 import '../services/workout_session_service.dart';
@@ -10,6 +11,7 @@ class FocusLiftApp extends StatelessWidget {
   final LocalStorageService storageService;
   final WorkoutSessionService sessionService;
   final NotificationService notificationService;
+  final FocusControlService focusService;
   final AppPreferences initialPreferences;
 
   const FocusLiftApp({
@@ -17,6 +19,7 @@ class FocusLiftApp extends StatelessWidget {
     required this.storageService,
     required this.sessionService,
     required this.notificationService,
+    required this.focusService,
     required this.initialPreferences,
   });
 
@@ -30,6 +33,7 @@ class FocusLiftApp extends StatelessWidget {
         storageService: storageService,
         sessionService: sessionService,
         notificationService: notificationService,
+        focusService: focusService,
         initialPreferences: initialPreferences,
       ),
     );

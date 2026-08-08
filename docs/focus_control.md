@@ -256,13 +256,27 @@ Starting in iOS 15/16, Apple provides the official **Screen Time Frameworks**:
 
 ---
 
-## Implementation Plan for Phase 5
+## Implementation Plan & Implemented Architecture (Phase 5)
 
-1. **Dart Abstraction (`FocusControlService`):**
-   - Define clean interface methods: `requestAuthorization()`, `getAuthorizationStatus()`, `selectApps()`, `startFocusSession()`, `stopFocusSession()`, `restoreNormalAccess()`.
-2. **iOS Native Bridge:**
-   - Implement `FocusControlPlugin.swift` wrapping `FamilyControls`, `FamilyActivityPicker`, and `ManagedSettingsStore`.
-3. **Android Native Bridge:**
-   - Implement `FocusControlPlugin.kt` wrapping `Settings.ACTION_USAGE_ACCESS_SETTINGS` intent handling, launcher app discovery, and workout reminder notifications.
-4. **Fail-Safe Cleanup:**
-   - Ensure `restoreNormalAccess()` is called on workout finish, cancel, discard, and app reboot to guarantee the user is never locked out.
+1. **Common Dart Abstraction (`lib/services/focus_control/`):**
+   - `FocusAuthorizationStatus`: Strong enum (`notDetermined`, `authorized`, `denied`, `restricted`, `unsupported`) with user-facing labels.
+   - `FocusControlResult`: Immutable result object returning status, mode, and explanatory messages.
+   - `AppInfo`: Model representing launcher-resolvable applications on Android.
+   - `FocusControlService`: Service managing `MethodChannel('com.cotrainr.focuslift/focus_control')`, on-device distraction persistence, focus activation, and unconditional fail-safe cleanup.
+2. **Android Native Implementation (`MainActivity.kt`):**
+   - `getAuthorizationStatus`: Inspects `AppOpsManager.OPSTR_GET_USAGE_STATS` without throwing.
+   - `requestAuthorization`: Launches system `Settings.ACTION_USAGE_ACCESS_SETTINGS`.
+   - `getLauncherApps`: Queries `Intent.ACTION_MAIN` with `Intent.CATEGORY_LAUNCHER` to discover user applications safely without `QUERY_ALL_PACKAGES`.
+   - `startFocusSession` / `stopFocusSession`: Manages focus session state.
+   - `restoreNormalAccess`: Ensures all monitoring state is cleared.
+3. **iOS Native Implementation (`FocusControlPlugin.swift` & `AppDelegate.swift`):**
+   - Integrates `FamilyControls.AuthorizationCenter.shared.requestAuthorization(for: .individual)`.
+   - Manages `ManagedSettingsStore(named: .init("com.cotrainr.focuslift.workout"))`.
+   - `restoreNormalAccess` / `stopFocusSession`: Unconditionally calls `store.clearAllSettings()`.
+4. **Manual Apple Developer Steps for Distribution:**
+   - **Step 1:** Add `com.apple.developer.family-controls` entitlement in `Runner.entitlements` (completed for development).
+   - **Step 2:** Log in to the Apple Developer Portal (developer.apple.com) ➔ Certificates, Identifiers & Profiles ➔ App IDs ➔ `com.cotrainr.focuslift` ➔ Enable "Family Controls".
+   - **Step 3:** Request the official **Family Controls Distribution Entitlement** from Apple Developer Relations via the online submission form before publishing to TestFlight external groups or App Store review.
+5. **Fail-Safe Startup & Discard Guarantees:**
+   - On application startup (`main.dart`), if no valid active workout is recovered, `focusControlService.restoreNormalAccess()` is called immediately.
+   - Discarding a recovered workout on the Home screen unconditionally clears all shields and focus states.

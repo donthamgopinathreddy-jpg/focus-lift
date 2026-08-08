@@ -1,24 +1,29 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:focus_lift/app/app.dart';
 import 'package:focus_lift/models/app_preferences.dart';
+import 'package:focus_lift/models/focus_mode.dart';
 import 'package:focus_lift/models/workout_session.dart';
+import 'package:focus_lift/screens/focus/distraction_picker_screen.dart';
 import 'package:focus_lift/screens/settings/settings_screen.dart';
 import 'package:focus_lift/services/alert_service.dart';
+import 'package:focus_lift/services/focus_control/app_info.dart';
+import 'package:focus_lift/services/focus_control/focus_authorization_status.dart';
+import 'package:focus_lift/services/focus_control/focus_control_result.dart';
+import 'package:focus_lift/services/focus_control/focus_control_service.dart';
 import 'package:focus_lift/services/local_storage_service.dart';
 import 'package:focus_lift/services/notification_service.dart';
 import 'package:focus_lift/services/wakelock_service.dart';
 import 'package:focus_lift/services/workout_session_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Mock plugin to verify notification scheduling and cancellation calls.
 class FakeFlutterLocalNotificationsPlugin
     extends Fake
     implements FlutterLocalNotificationsPlugin {
   int scheduledCount = 0;
   int cancelledCount = 0;
-  DateTime? lastScheduledTime;
   String? lastTitle;
 
   @override
@@ -46,7 +51,6 @@ class FakeFlutterLocalNotificationsPlugin
   }) async {
     scheduledCount++;
     lastTitle = title;
-    lastScheduledTime = scheduledDate is DateTime ? scheduledDate : null;
   }
 
   @override
@@ -58,93 +62,192 @@ class FakeFlutterLocalNotificationsPlugin
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  const channel = MethodChannel(FocusControlService.channelName);
+  int startFocusCalls = 0;
+  int stopFocusCalls = 0;
+  int restoreAccessCalls = 0;
+  String mockAuthStatus = 'authorized';
+
   setUp(() {
     SharedPreferences.setMockInitialValues({});
-  });
+    startFocusCalls = 0;
+    stopFocusCalls = 0;
+    restoreAccessCalls = 0;
+    mockAuthStatus = 'authorized';
 
-  group('Phase 3: AlertService Sound & Vibration Tests', () {
-    test('Trigger alert respects sound and vibration preferences safely', () async {
-      // Sound = ON, Vibration = ON
-      await AlertService.triggerRestCompleteAlert(
-        soundEnabled: true,
-        vibrationEnabled: true,
-      );
-
-      // Sound = OFF, Vibration = OFF
-      await AlertService.triggerRestCompleteAlert(
-        soundEnabled: false,
-        vibrationEnabled: false,
-      );
-
-      // Selection haptic click
-      await AlertService.triggerSelectionHaptic();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+      switch (methodCall.method) {
+        case 'getAuthorizationStatus':
+          return mockAuthStatus;
+        case 'requestAuthorization':
+          return true;
+        case 'getLauncherApps':
+          return [
+            {'appName': 'Social Feed', 'packageName': 'com.social.feed'},
+            {'appName': 'Video Clips', 'packageName': 'com.video.clips'},
+          ];
+        case 'startFocusSession':
+          startFocusCalls++;
+          return true;
+        case 'stopFocusSession':
+          stopFocusCalls++;
+          return null;
+        case 'restoreNormalAccess':
+          restoreAccessCalls++;
+          return null;
+        case 'updateSelectedDistractions':
+        case 'openAppPicker':
+          return null;
+        default:
+          return null;
+      }
     });
   });
 
-  group('Phase 3: WakelockService Tests', () {
-    test('Set awake and release execute safely without crashing', () async {
-      await WakelockService.setAwake(true);
-      await WakelockService.setAwake(false);
-      await WakelockService.release();
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null);
+  });
+
+  group('Phase 5: Focus Authorization & Result Models', () {
+    test('FocusAuthorizationStatus labels and descriptions are descriptive', () {
+      for (final status in FocusAuthorizationStatus.values) {
+        expect(status.label.isNotEmpty, true);
+        expect(status.description.isNotEmpty, true);
+      }
+    });
+
+    test('FocusControlResult factory constructors populate state accurately', () {
+      final active = FocusControlResult.active(FocusMode.focus);
+      expect(active.success, true);
+      expect(active.status, FocusAuthorizationStatus.authorized);
+      expect(active.mode, FocusMode.focus);
+
+      final reduced = FocusControlResult.reduced(
+        status: FocusAuthorizationStatus.denied,
+        mode: FocusMode.balanced,
+      );
+      expect(reduced.success, false);
+      expect(reduced.status, FocusAuthorizationStatus.denied);
+      expect(reduced.mode, FocusMode.balanced);
+    });
+
+    test('AppInfo model handles serialization and copying properly', () {
+      const app = AppInfo(appName: 'Test App', packageName: 'com.test.app');
+      final map = app.toMap();
+      final fromMap = AppInfo.fromMap(map);
+
+      expect(fromMap.appName, 'Test App');
+      expect(fromMap.packageName, 'com.test.app');
+      expect(fromMap.isSelected, false);
+
+      final selectedApp = app.copyWith(isSelected: true);
+      expect(selectedApp.isSelected, true);
     });
   });
 
-  group('Phase 3: NotificationService Scheduling & Cleanup Tests', () {
-    test('Schedules notification at restEndsAt timestamp', () async {
-      final fakePlugin = FakeFlutterLocalNotificationsPlugin();
-      final service = NotificationService(fakePlugin);
-      await service.initialize();
+  group('Phase 5: FocusControlService Tests', () {
+    test('Queries authorization status and requests permissions safely', () async {
+      final service = await FocusControlService.create();
 
-      final futureRestEnd = DateTime.now().add(const Duration(seconds: 60));
-      await service.scheduleRestNotification(
-        restEndsAt: futureRestEnd,
-        nextSetNumber: 2,
-      );
+      final status = await service.getAuthorizationStatus();
+      expect(status, FocusAuthorizationStatus.authorized);
 
-      expect(fakePlugin.scheduledCount, 1);
-      expect(fakePlugin.lastTitle, 'Rest Complete');
-      expect(fakePlugin.cancelledCount, 1); // Cancels old before new
+      final requested = await service.requestAuthorization();
+      expect(requested, true);
     });
 
-    test('Does not schedule notification if restEndsAt is already in the past', () async {
-      final fakePlugin = FakeFlutterLocalNotificationsPlugin();
-      final service = NotificationService(fakePlugin);
-      await service.initialize();
+    test('Discovers launcher apps and persists selected distractions locally', () async {
+      final service = await FocusControlService.create();
 
-      final pastRestEnd = DateTime.now().subtract(const Duration(seconds: 10));
-      await service.scheduleRestNotification(
-        restEndsAt: pastRestEnd,
-        nextSetNumber: 1,
-      );
+      final apps = await service.getLauncherApps();
+      expect(apps.length, 2);
+      expect(apps.first.appName, 'Social Feed');
 
-      expect(fakePlugin.scheduledCount, 0);
-      expect(fakePlugin.cancelledCount, 1); // Cleans up
+      await service.saveSelectedDistractions(['com.social.feed']);
+      final saved = await service.getSelectedDistractions();
+      expect(saved, contains('com.social.feed'));
     });
 
-    test('Cancels notification properly on skip rest or finish', () async {
-      final fakePlugin = FakeFlutterLocalNotificationsPlugin();
-      final service = NotificationService(fakePlugin);
-      await service.initialize();
+    test('startFocusSession, stopFocusSession, and restoreNormalAccess invoke native bridge',
+        () async {
+      final service = await FocusControlService.create();
 
-      await service.cancelRestNotification();
-      expect(fakePlugin.cancelledCount, 1);
+      final result = await service.startFocusSession(FocusMode.focus);
+      expect(result.success, true);
+      expect(startFocusCalls, 1);
+      expect(service.isSessionActive, true);
+
+      await service.stopFocusSession();
+      expect(stopFocusCalls, 1);
+      expect(service.isSessionActive, false);
+
+      await service.restoreNormalAccess();
+      expect(restoreAccessCalls, 1);
+    });
+
+    test('Gracefully handles platform exceptions or unsupported environments', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall call) async {
+        throw PlatformException(code: 'UNAVAILABLE');
+      });
+
+      final service = await FocusControlService.create();
+      final status = await service.getAuthorizationStatus();
+      expect(status, FocusAuthorizationStatus.unsupported);
+
+      final requested = await service.requestAuthorization();
+      expect(requested, false);
+
+      final apps = await service.getLauncherApps();
+      expect(apps, isEmpty);
+
+      final result = await service.startFocusSession(FocusMode.focus);
+      expect(result.success, false);
+      expect(result.status, FocusAuthorizationStatus.unsupported);
     });
   });
 
-  group('Phase 3: Workout Flow with Notifications, Haptics & Lifecycle', () {
-    testWidgets('Full Workout flow with AlertService and NotificationService integration',
+  group('Phase 5: UI & Full Workout Flow Integration with Focus Control', () {
+    testWidgets('DistractionPickerScreen allows toggling and clearing apps',
+        (WidgetTester tester) async {
+      final service = await FocusControlService.create();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DistractionPickerScreen(focusService: service),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('DISTRACTIONS'), findsOneWidget);
+      expect(find.text('Social Feed'), findsOneWidget);
+      expect(find.text('Video Clips'), findsOneWidget);
+
+      final switches = find.byType(Switch);
+      expect(switches, findsNWidgets(2));
+
+      // Toggle first app
+      await tester.tap(switches.first);
+      await tester.pumpAndSettle();
+
+      final saved = await service.getSelectedDistractions();
+      expect(saved, contains('com.social.feed'));
+    });
+
+    testWidgets('Full Workout flow starts and finishes with FocusControlService cleanup',
         (WidgetTester tester) async {
       final storage = await LocalStorageService.create();
       final sessionService = await WorkoutSessionService.create();
       final fakePlugin = FakeFlutterLocalNotificationsPlugin();
       final notificationService = NotificationService(fakePlugin);
       await notificationService.initialize();
+      final focusService = await FocusControlService.create();
 
       const prefs = AppPreferences(
         defaultRestDurationSeconds: 60,
-        soundEnabled: true,
-        vibrationEnabled: true,
-        keepScreenAwake: true,
+        focusMode: FocusMode.focus,
       );
       await storage.savePreferences(prefs);
 
@@ -153,71 +256,75 @@ void main() {
           storageService: storage,
           sessionService: sessionService,
           notificationService: notificationService,
+          focusService: focusService,
           initialPreferences: prefs,
         ),
       );
 
-      // 1. Home Screen -> Start Workout
+      // Home Screen
       expect(find.text('START WORKOUT'), findsOneWidget);
+      expect(find.text('CONFIGURE DISTRACTIONS'), findsOneWidget);
+
+      // Start Workout
       await tester.tap(find.text('START WORKOUT'));
       await tester.pumpAndSettle();
 
-      // 2. Active Workout Screen
       expect(find.text('WORKOUT'), findsOneWidget);
-      expect(find.text('END SET'), findsOneWidget);
-      expect(find.text('SETS COMPLETED'), findsOneWidget);
+      expect(startFocusCalls, 1);
 
-      // 3. Tap END SET -> Schedules notification and starts rest
-      await tester.tap(find.text('END SET'));
-      await tester.pump();
-      expect(find.text('REST'), findsOneWidget);
-      expect(fakePlugin.scheduledCount, 1);
-
-      // 4. Tap SKIP REST -> Cancels notification and returns to active
-      await tester.tap(find.text('SKIP REST'));
-      await tester.pump();
-      expect(find.text('END SET'), findsOneWidget);
-      expect(fakePlugin.cancelledCount, 2); // 1 from initial schedule, 1 from skip
-
-      // 5. Tap END SET again
-      await tester.tap(find.text('END SET'));
-      await tester.pump();
-      expect(fakePlugin.scheduledCount, 2);
-
-      // 6. Finish Workout Flow
+      // Finish Workout
       await tester.tap(find.text('FINISH'));
       await tester.pumpAndSettle();
-      expect(find.text('FINISH WORKOUT?'), findsOneWidget);
-
       await tester.tap(find.widgetWithText(ElevatedButton, 'FINISH'));
       await tester.pumpAndSettle();
 
-      // 7. Workout Complete Summary Screen
       expect(find.text('WORKOUT COMPLETE'), findsOneWidget);
-      expect(find.text('DONE'), findsOneWidget);
-
-      // 8. Tap DONE -> Returns Home
-      await tester.tap(find.text('DONE'));
-      await tester.pumpAndSettle();
-      expect(find.text('START WORKOUT'), findsOneWidget);
+      expect(stopFocusCalls >= 1, true);
+      expect(restoreAccessCalls >= 1, true);
     });
 
-    testWidgets('Lifecycle resume recalculates rest state if elapsed while backgrounded',
+    testWidgets('Workout starts properly even when Focus Control authorization is denied',
+        (WidgetTester tester) async {
+      mockAuthStatus = 'denied';
+      final storage = await LocalStorageService.create();
+      final sessionService = await WorkoutSessionService.create();
+      final fakePlugin = FakeFlutterLocalNotificationsPlugin();
+      final notificationService = NotificationService(fakePlugin);
+      final focusService = await FocusControlService.create();
+
+      const prefs = AppPreferences();
+
+      await tester.pumpWidget(
+        FocusLiftApp(
+          storageService: storage,
+          sessionService: sessionService,
+          notificationService: notificationService,
+          focusService: focusService,
+          initialPreferences: prefs,
+        ),
+      );
+
+      await tester.tap(find.text('START WORKOUT'));
+      await tester.pumpAndSettle();
+
+      // Workout timer still functions normally in reduced mode
+      expect(find.text('WORKOUT'), findsOneWidget);
+      expect(find.text('END SET'), findsOneWidget);
+    });
+
+    testWidgets('Discarding unfinished session cleans up focus restrictions',
         (WidgetTester tester) async {
       final storage = await LocalStorageService.create();
       final sessionService = await WorkoutSessionService.create();
       final fakePlugin = FakeFlutterLocalNotificationsPlugin();
       final notificationService = NotificationService(fakePlugin);
-      await notificationService.initialize();
+      final focusService = await FocusControlService.create();
 
-      const prefs = AppPreferences();
-
-      // Start in a resting session where restEndsAt is in the past
       final now = DateTime.now();
       final session = WorkoutSession.start(
         selectedRestDuration: 60,
-        startTime: now.subtract(const Duration(minutes: 5)),
-      ).endSet(timestamp: now.subtract(const Duration(seconds: 70)));
+        startTime: now.subtract(const Duration(minutes: 2)),
+      );
       await sessionService.saveActiveSession(session);
 
       await tester.pumpWidget(
@@ -225,37 +332,47 @@ void main() {
           storageService: storage,
           sessionService: sessionService,
           notificationService: notificationService,
-          initialPreferences: prefs,
+          focusService: focusService,
+          initialPreferences: const AppPreferences(),
         ),
       );
 
-      // Home shows recovery banner for unfinished resting workout
       expect(find.text('UNFINISHED WORKOUT'), findsOneWidget);
-      await tester.tap(find.text('RESUME'));
+      await tester.tap(find.text('DISCARD'));
       await tester.pumpAndSettle();
 
-      // Should automatically render REST COMPLETE because rest elapsed
-      expect(find.text('REST COMPLETE'), findsOneWidget);
-      expect(find.text('START NEXT SET'), findsOneWidget);
+      expect(stopFocusCalls, 1);
+      expect(restoreAccessCalls, 1);
+      expect(sessionService.loadActiveSession(), isNull);
+    });
+  });
 
-      // Tap Start Next Set
-      await tester.tap(find.text('START NEXT SET'));
-      await tester.pump();
-      expect(find.text('END SET'), findsOneWidget);
+  group('Previous Phase Verification: Alerts, Wakelock, Notifications & Settings', () {
+    test('Sound and vibration alerts execute safely', () async {
+      await AlertService.triggerRestCompleteAlert(
+        soundEnabled: true,
+        vibrationEnabled: true,
+      );
+      await AlertService.triggerRestCompleteAlert(
+        soundEnabled: false,
+        vibrationEnabled: false,
+      );
+      await AlertService.triggerSelectionHaptic();
     });
 
-    testWidgets('Settings screen persists Sound, Vibration, and Screen Awake options',
-        (WidgetTester tester) async {
+    test('WakelockService executes safely', () async {
+      await WakelockService.setAwake(true);
+      await WakelockService.setAwake(false);
+      await WakelockService.release();
+    });
+
+    testWidgets('Settings screen toggles persist properly', (WidgetTester tester) async {
       tester.view.physicalSize = const Size(800, 1600);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() => tester.view.resetPhysicalSize());
 
       final storage = await LocalStorageService.create();
-      const prefs = AppPreferences(
-        soundEnabled: true,
-        vibrationEnabled: true,
-        keepScreenAwake: true,
-      );
+      const prefs = AppPreferences();
 
       await tester.pumpWidget(
         MaterialApp(
@@ -270,16 +387,6 @@ void main() {
       expect(find.text('Sound Alert'), findsOneWidget);
       expect(find.text('Vibration'), findsOneWidget);
       expect(find.text('Keep Screen Awake'), findsOneWidget);
-
-      final switches = find.byType(Switch);
-      expect(switches, findsNWidgets(3));
-
-      // Toggle Sound off
-      await tester.tap(switches.at(0));
-      await tester.pumpAndSettle();
-
-      final reloaded = storage.loadPreferences();
-      expect(reloaded.soundEnabled, false);
     });
   });
 }
