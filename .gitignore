@@ -1,0 +1,85 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# Visual Studio Code
+.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+/android/local.properties
+/android/.gradle/
+/android/captures/
+/android/gradlew
+/android/gradlew.bat
+/android/gradle/
+
+# iOS / macOS ephemeral & pods
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/app.framework
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/profile
+**/ios/Debug
+**/ios/Release
+**/macos/Flutter/ephemeral/
+**/macos/Pods/
+
+# Linux / Windows ephemeral
+**/linux/flutter/ephemeral/
+**/windows/flutter/ephemeral/
+
+# Secrets, keys, certificates, keystores, environment
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.cer
+*.crt
+*.der
+*.key
+*.pem
+*.mobileprovision
+*.env
+*.env.*
+secrets.json
+google-services.json
+GoogleService-Info.plist
