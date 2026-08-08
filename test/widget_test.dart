@@ -178,6 +178,11 @@ void main() {
     });
 
     testWidgets('First-time LAUNCH presents setup sheet and CONTINUE activates workout', (tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
       SharedPreferences.setMockInitialValues({});
       final storage = await LocalStorageService.create();
       final sessionService = await WorkoutSessionService.create();
